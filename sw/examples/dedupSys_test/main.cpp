@@ -24,7 +24,8 @@
 
 #include "cBench.hpp"
 #include "cProcess.hpp"
-#include "dedupUtil.hpp"
+// #include "dedupUtil.hpp"
+#include "dedupSys.hpp"
 
 using namespace std;
 using namespace fpga;
@@ -117,25 +118,55 @@ int main(int argc, char *argv[])
   /* Module 1: get config */
   /************************************************/
   /************************************************/
+  auto dedup_sys = dedup::dedupSys();
+  dedup_sys.initializeNetworkInfo();
   string project_dir = "/home/jiayli/projects/coyote-rdma";
-  const auto hostname_long = boost::asio::ip::host_name();
-  // Extract the substring before the first dot for hostname: hostname_long = alveo-u55c_xx.inf.ethz.ch
-  std::string hostname = hostname_long.substr(0, hostname_long.find('.'));
-  std::cout << "Full hostname: " << hostname_long << std::endl;
-  std::cout << "Name before first dot: " << hostname << std::endl;
+  std::cout << "Node hostname: " << dedup_sys.node_host_name << ", " << dedup_sys.getNodeHostname() << std::endl;
   // prep step 1: get latest config
-  std::filesystem::path config_path_to_search = project_dir + "/rdma_connection";
-  auto latest_config_dir = dedup::findLatestSubdirectory(config_path_to_search);
-  if (!latest_config_dir.empty()) {
-      std::cout << "Latest config under: " << latest_config_dir << std::endl;
-  } else {
-      std::cout << "No valid config found: " << latest_config_dir << std::endl;
+  std::cout << "IP: " << std::endl;
+  for (auto iter = dedup_sys.all_nodes_network_info.begin(); iter != dedup_sys.all_nodes_network_info.end(); iter ++){
+    std::cout << iter->first << ", " << iter->second.first << ", " << iter->second.second << std::endl;
   }
   // get routing table
-  std::vector<dedup::routing_table_entry> node_routing_table = dedup::readRoutingTable(latest_config_dir, hostname);
-  if (node_routing_table.size() > routing_channel_count){
-    throw std::runtime_error("Routing table too big and exceeds the hardware routing channel count");
+  std::cout << "Routing Table: " << std::endl;
+  for (auto& x : dedup_sys.node_routing_table){
+    x.print();
   }
+  std::cout << "Outgoing connections: " << std::endl;
+  for (auto& x : dedup_sys.node_outgoing_connections){
+    x.print();
+  }
+  std::cout << "Incomming connections: " << std::endl;
+  for (auto& x : dedup_sys.node_incomming_connections){
+    x.print();
+  }
+
+  // boost::thread server_thread(&dedupSys::setupConnectionServer, &dedup_sys);
+  // sleep(5);
+  // boost::thread client_thread(&dedupSys::setupConnectionClient, &dedup_sys);
+
+  // server_thread.join();
+  // client_thread.join();
+
+  // boost::asio::thread_pool pool(2); // Create a thread pool with 2 threads
+  // // Post tasks to the thread pool
+  // boost::asio::post(pool, [&dedup_sys] { setupConnectionServer(); });
+  // sleep(5);
+  // boost::asio::post(pool, [&dedup_sys] { setupConnectionClient(); });
+
+  // pool.join(); // Wait for all tasks in the pool to complete
+  dedup_sys.setupConnections();
+  std::cout << "Setup m2s connections"<< endl;
+  for (const auto& x : dedup_sys.client_sockets){
+    std::cout << x. first << ", " << x.second << endl;
+  }
+  std::cout << "Setup s2m connections"<< endl;
+  for (const auto& x : dedup_sys.server_sockets){
+    std::cout << x. first << ", " << x.second << endl;
+  }
+  dedup_sys.syncBarrier();
+  dedup_sys.exchangeQps();
+  dedup_sys.syncBarrier();
   // for (auto & iter : node_routing_table){
   //   std::cout << iter.hostname << std::endl;
   //   std::cout << iter.node_id << std::endl;
@@ -148,7 +179,7 @@ int main(int argc, char *argv[])
   //   std::cout << std::endl;
   // }
   // get rdma connection information
-  std::vector<dedup::rdma_connection_entry> node_outgoing_connections = dedup::readRdmaConnections(latest_config_dir, hostname, "m2s");
+  // std::vector<dedup::rdma_connection_entry> node_outgoing_connections = dedup::readRdmaConnections(latest_config_dir, hostname, "m2s");
   // for (auto & iter : node_outgoing_connections){
   //   std::cout << iter.node_idx << std::endl;
   //   std::cout << iter.hostname << std::endl;
@@ -158,7 +189,7 @@ int main(int argc, char *argv[])
   //   std::cout << iter.host_fpga_ip << std::endl;
   //   std::cout << std::endl;
   // }
-  std::vector<dedup::rdma_connection_entry> node_incomming_connections = dedup::readRdmaConnections(latest_config_dir, hostname, "s2m");
+  // std::vector<dedup::rdma_connection_entry> node_incomming_connections = dedup::readRdmaConnections(latest_config_dir, hostname, "s2m");
   // for (auto & iter : node_incomming_connections){
   //   std::cout << iter.node_idx << std::endl;
   //   std::cout << iter.hostname << std::endl;
@@ -170,8 +201,8 @@ int main(int argc, char *argv[])
   // }
  
   // prep step 2: setup rdma connections
-  std::string local_fpga_ip = node_routing_table[0].host_fpga_ip;
-  auto node_alive_connections = dedup::setupConnections(local_fpga_ip, node_outgoing_connections, node_incomming_connections);
+  // std::string local_fpga_ip = node_routing_table[0].host_fpga_ip;
+  // auto node_alive_connections = dedup::setupConnections(local_fpga_ip, node_outgoing_connections, node_incomming_connections);
 
 
   /************************************************/
@@ -179,7 +210,7 @@ int main(int argc, char *argv[])
   /* Module 2: run dedup */
   /************************************************/
   /************************************************/
-  string output_dir = project_dir + "/sw/examples/dedupnew_bench1/page_resp/" + hostname;
+  string output_dir = project_dir + "/sw/examples/dedupSys_test/page_resp/" + dedup_sys.node_host_name;
   // string 
   // Create the directory with read/write/search permissions for owner and group, and with read/search permissions for others
   try {
@@ -224,19 +255,19 @@ int main(int argc, char *argv[])
     std::cout << "System was initialized, no op" << std::endl;
   }
   // setup routing table
-  uint32_t active_channel_count = node_routing_table.size();
+  uint32_t active_channel_count = dedup_sys.node_routing_table.size();
   cproc.setCSR(active_channel_count, static_cast<uint32_t>(CTLR::ACTIVE_CHANNEL_COUNT));
   for (int index = 0 ; index < active_channel_count; index ++){
     // nodeIdx
-    cproc.setCSR(node_routing_table[index].node_id, static_cast<uint32_t>(static_cast<uint32_t>(CTLR::ROUTING_TABLE_CONTENT_BASE) + 3 * index));
+    cproc.setCSR(dedup_sys.node_routing_table[index].node_id, static_cast<uint32_t>(static_cast<uint32_t>(CTLR::ROUTING_TABLE_CONTENT_BASE) + 3 * index));
     // start
-    cproc.setCSR(node_routing_table[index].hash_start, static_cast<uint32_t>(static_cast<uint32_t>(CTLR::ROUTING_TABLE_CONTENT_BASE) + 1 + 3 * index));
+    cproc.setCSR(dedup_sys.node_routing_table[index].hash_start, static_cast<uint32_t>(static_cast<uint32_t>(CTLR::ROUTING_TABLE_CONTENT_BASE) + 1 + 3 * index));
     // len
-    cproc.setCSR(node_routing_table[index].hash_len, static_cast<uint32_t>(static_cast<uint32_t>(CTLR::ROUTING_TABLE_CONTENT_BASE) + 2 + 3 * index));
+    cproc.setCSR(dedup_sys.node_routing_table[index].hash_len, static_cast<uint32_t>(static_cast<uint32_t>(CTLR::ROUTING_TABLE_CONTENT_BASE) + 2 + 3 * index));
   }
   for (int index = 0 ; index < active_channel_count - 1; index ++){
-    auto connection_id = node_routing_table[index + 1].connection_id;
-    auto connection_qpn = node_alive_connections.first->getQpairConn(connection_id)->getQpairStruct()->local.qpn;
+    auto connection_id = dedup_sys.node_routing_table[index + 1].connection_id;
+    auto connection_qpn = dedup_sys.getQpairConn(connection_id, "m2s")->getQpairStruct()->local.qpn;
     cproc.setCSR(connection_qpn, static_cast<uint32_t>(static_cast<uint32_t>(CTLR::RDMA_QPN_TABLE_BASE) + index));
   }
   cproc.setCSR(1, static_cast<uint32_t>(CTLR::UPDATE_ROUTING_TABLE));
@@ -246,7 +277,6 @@ int main(int argc, char *argv[])
     std::cout << "Waiting for HashTable header initialization" << std::endl;
     usleep(1);
   }
-
   if (is_active){
     // drived parameters
     uint32_t total_old_page_unique_count = (((uint32_t) (hash_table_fullness * ht_size) + 15)/16) * 16;
@@ -329,6 +359,7 @@ int main(int argc, char *argv[])
       cproc.setCSR(reinterpret_cast<uint64_t>(prepReqMem), static_cast<uint32_t>(CTLR::RDHOSTADDR));
       cproc.setCSR(reinterpret_cast<uint64_t>(prepRspMem), static_cast<uint32_t>(CTLR::WRHOSTADDR));
       cproc.setCSR(pg_idx_count + prep_instr_pg_num, static_cast<uint32_t>(CTLR::CNT)); // 16 pages in each command batch
+      dedup_sys.syncBarrier();
       cproc.setCSR(1, static_cast<uint32_t>(CTLR::START));
       sleep(1);
 
@@ -391,6 +422,7 @@ int main(int argc, char *argv[])
       cproc.setCSR(reinterpret_cast<uint64_t>(cleanReqMem), static_cast<uint32_t>(CTLR::RDHOSTADDR));
       cproc.setCSR(reinterpret_cast<uint64_t>(cleanRspMem), static_cast<uint32_t>(CTLR::WRHOSTADDR));
       cproc.setCSR(clean_instr_pg_num, static_cast<uint32_t>(CTLR::CNT)); // 16 pages in each command batch
+      dedup_sys.syncBarrier();
       cproc.setCSR(1, static_cast<uint32_t>(CTLR::START));
       sleep(1);
 
@@ -496,7 +528,7 @@ int main(int argc, char *argv[])
       cproc.setCSR(reinterpret_cast<uint64_t>(benchInsertReqMem), static_cast<uint32_t>(CTLR::RDHOSTADDR));
       cproc.setCSR(reinterpret_cast<uint64_t>(benchInsertRspMem), static_cast<uint32_t>(CTLR::WRHOSTADDR));
       cproc.setCSR(benchmark_insert_pg_num + benchmark_insert_instr_pg_num, static_cast<uint32_t>(CTLR::CNT)); // 16 pages in each command batch
-
+      dedup_sys.syncBarrier();
       auto begin_time = std::chrono::high_resolution_clock::now();
       cproc.setCSR(1, static_cast<uint32_t>(CTLR::START));
       while(cproc.getCSR(static_cast<uint32_t>(CTLR::WRDONE)) != benchmark_insert_pg_num/16);
@@ -572,6 +604,7 @@ int main(int argc, char *argv[])
       cproc.setCSR(reinterpret_cast<uint64_t>(benchCleanReqMem), static_cast<uint32_t>(CTLR::RDHOSTADDR));
       cproc.setCSR(reinterpret_cast<uint64_t>(benchCleanRspMem), static_cast<uint32_t>(CTLR::WRHOSTADDR));
       cproc.setCSR(benchmark_clean_instr_pg_num, static_cast<uint32_t>(CTLR::CNT)); // 16 pages in each command batch
+      dedup_sys.syncBarrier();
       cproc.setCSR(1, static_cast<uint32_t>(CTLR::START));
       sleep(1);
 
@@ -638,6 +671,7 @@ int main(int argc, char *argv[])
       cproc.setCSR(reinterpret_cast<uint64_t>(finalCleanReqMem), static_cast<uint32_t>(CTLR::RDHOSTADDR));
       cproc.setCSR(reinterpret_cast<uint64_t>(finalCleanRspMem), static_cast<uint32_t>(CTLR::WRHOSTADDR));
       cproc.setCSR(final_clean_instr_pg_num, static_cast<uint32_t>(CTLR::CNT)); // 16 pages in each command batch
+      dedup_sys.syncBarrier();
       cproc.setCSR(1, static_cast<uint32_t>(CTLR::START));
       sleep(1);
 

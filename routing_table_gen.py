@@ -138,7 +138,7 @@ def main():
   elif mode == 'hop_test':
     if (hop_count + 1) > len(hostlist):
       raise ValueError('Host count is not enough to support the target hop count')
-    print(f"Generating Routing Table for {hop_count=} with hop_test mode")
+    print(f"Generating Routing Table for {node_count=} with hop_test mode, {hop_count=}")
     # Divide the ring equally for nodeIdx
     node_idx_values = calculate_equal_division(node_count, node_idx_width)
     assert hop_count <= node_count

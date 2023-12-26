@@ -98,7 +98,12 @@ def main():
     # Process each line to identify ips
     for line in lines:
       hostname, cpu_ip, fpga_ip = line.split(',')
-      hostname_info[hostname].extend([cpu_ip, fpga_ip])
+      if hostname in hostname_info:
+        assert len(hostname_info[hostname]) == 1
+        hostname_info[hostname].extend([cpu_ip, fpga_ip])
+
+  for key in hostname_info.keys():
+    assert len(hostname_info[key]) == 3
 
   # Process files in sorted order
   for node_idx, hostname, file in files_to_process:

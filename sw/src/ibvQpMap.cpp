@@ -219,4 +219,92 @@ void ibvQpMap::exchangeQpSlave(const char *trgt_addr, uint16_t port) {
     }
 }
 
+void ibvQpMap::exchangeQpSlave(const char *trgt_addr, uint32_t qpid, uint16_t port) {
+    struct addrinfo *res, *t;
+    uint8_t ack;
+    struct addrinfo hints = {};
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+    char* service;
+    int n = 0;
+    int sockfd = -1;
+    char recv_buf[recvBuffSize];
+    memset(recv_buf, 0, recvBuffSize);
+
+    DBG2("Slave side exchange started ...");
+
+    if (asprintf(&service, "%d", port) < 0)
+        throw std::runtime_error("asprintf() failed");
+
+    n = getaddrinfo(trgt_addr, service, &hints, &res);
+    if (n < 0) {
+        free(service);
+        throw std::runtime_error("getaddrinfo() failed");
+    }
+
+    // int n_qpairs = qpairs.size();
+    uint32_t curr_qpid = qpid;
+    ibvQpConn *curr_qp_conn = qpairs[qpid].get();
+    // for(auto &[curr_qpid, curr_qp_conn] : qpairs) {
+        for (t = res; t; t = t->ai_next) {
+            sockfd = ::socket(t->ai_family, t->ai_socktype, t->ai_protocol);
+            if (sockfd >= 0) {
+                if (!::connect(sockfd, t->ai_addr, t->ai_addrlen)) {
+                    break;
+                }
+                ::close(sockfd);
+                sockfd = -1;
+            }
+        }
+
+        if (sockfd < 0)
+            throw std::runtime_error("Could not connect to master: " + std::string(trgt_addr) + ":" + to_string(port));
+
+        // Send qpid
+        if (::write(sockfd, &curr_qpid, sizeof(uint32_t)) != sizeof(uint32_t)) {
+            ::close(sockfd);
+            throw std::runtime_error("Could not write a qpid");
+        }
+
+        // Wait for ack
+        if(::read(sockfd, recv_buf, 1) != 1) {
+            ::close(sockfd);
+            throw std::runtime_error("Could not read ack/nack");
+        }
+        memcpy(&ack, recv_buf, 1);
+        if(ack != msgAck) 
+            throw std::runtime_error("Received nack");
+
+        // Send a queue
+        if (::write(sockfd, &curr_qp_conn->getQpairStruct()->local, sizeof(ibvQ)) != sizeof(ibvQ)) {
+            ::close(sockfd);
+            throw std::runtime_error("Could not write a local queue");
+        }
+
+        // Read a queue
+        if(::read(sockfd, recv_buf, sizeof(ibvQ)) != sizeof(ibvQ)) {
+            ::close(sockfd);
+            throw std::runtime_error("Could not read a remote queue");
+        }
+
+        curr_qp_conn->setConnection(sockfd);
+
+        ibvQp *qpair = curr_qp_conn->getQpairStruct();
+        memcpy(&qpair->remote, recv_buf, sizeof(ibvQ));
+        DBG2("Qpair ID: " << curr_qpid);
+        qpair->local.print("Local ");
+        qpair->remote.print("Remote");
+
+        // Write context and connection
+        curr_qp_conn->writeContext(port);
+
+        // ARP lookup
+        curr_qp_conn->doArpLookup();
+
+        if (res) 
+            freeaddrinfo(res);
+        free(service);
+    // }
+}
+
 }

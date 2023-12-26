@@ -35,6 +35,7 @@ public:
     // Queue pair exchange
     void exchangeQpMaster(uint16_t port);
     void exchangeQpSlave(const char *trgt_addr, uint16_t port);
+    void exchangeQpSlave(const char *trgt_addr, uint32_t qpid, uint16_t port);
     
 };
 

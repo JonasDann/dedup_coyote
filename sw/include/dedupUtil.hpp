@@ -1,5 +1,6 @@
 #pragma once
 
+#include "ibvQpMap.hpp"
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -15,6 +16,16 @@ struct routing_table_entry {
     uint32_t    node_idx;
     std::string host_cpu_ip;
     std::string host_fpga_ip;
+    void print() {
+        std::cout << hostname << ", ";
+        std::cout << node_id << ", ";
+        std::cout << hash_start << ", ";
+        std::cout << hash_len << ", ";
+        std::cout << connection_id << ", ";
+        std::cout << node_idx << ", ";
+        std::cout << host_cpu_ip << ", ";
+        std::cout << host_fpga_ip << std::endl;
+    }
 };
 
 struct rdma_connection_entry {
@@ -24,10 +35,20 @@ struct rdma_connection_entry {
     uint32_t    connection_id;
     std::string host_cpu_ip;
     std::string host_fpga_ip;
+    void print() {
+        std::cout << node_idx << ", ";
+        std::cout << hostname << ", ";
+        std::cout << node_id << ", ";
+        std::cout << connection_id << ", ";
+        std::cout << host_cpu_ip << ", ";
+        std::cout << host_fpga_ip << std::endl;
+    }
 };
 
 std::filesystem::path findLatestSubdirectory(const std::filesystem::path& directory);
 std::vector<routing_table_entry> readRoutingTable(const std::filesystem::path& search_directory, const std::string& hostname);
 std::vector<rdma_connection_entry> readRdmaConnections(const std::filesystem::path& search_directory, const std::string& hostname, const std::string& direction);
+std::unordered_map<std::string, std::pair<std::string, std::string>> readIpInfo(const std::filesystem::path& file_path);
+std::pair<fpga::ibvQpMap*, fpga::ibvQpMap*> setupConnections(const std::string& local_fpga_ip, const std::vector<rdma_connection_entry>& node_outgoing_connections, const std::vector<rdma_connection_entry>& node_incomming_connections);
 
 } // namespace dedup

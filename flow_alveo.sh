@@ -1,125 +1,98 @@
 #!/bin/bash
 
+# set -o xtrace
+
+# This script is basically:
+# ./get_ip_remote.sh
+# ./hw_reset_remote.sh
+# ./gen_network_config.sh
+
 ##
 ## Args
 ##
-
-if [ "$1" == "-h" ]; then
-  echo "Usage: $0 <bitstream_path_within_base> <driver_path_within_base> <qsfp_port>" >&2
-  exit 0
-fi
-
 if ! [ -x "$(command -v vivado)" ]; then
 	echo "Vivado does NOT exist in the system."
 	exit 1
 fi
-
-BASE_PATH=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
-
-PROGRAM_FPGA=1
-DRV_INSERT=1
-
-BIT_PATH=$1
-DRV_PATH=$2
-
-if [ -z "$3" ]; then
-    QSFP_PORT=0
-else
-    QSFP_PORT=$3
-fi
+SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 
 ##
-## Server IDs (u55c)
+## Paths and Server IDs
 ##
-
-echo "*** Enter server IDs:"
-read -a SERVID
-
-BOARDSN=(XFL1QOQ1ATTYA XFL1O5FZSJEIA XFL1QGKZZ0HVA XFL11JYUKD4IA XFL1EN2C02C0A XFL1NMVTYXR4A XFL1WI3AMW4IA XFL1ELZXN2EGA XFL1W5OWZCXXA XFL1H2WA3T53A)
+IP_OUTPUT_FILE="${SCRIPT_DIR}/server_ip.csv"
+SERVID=(6 8 9 10)  # Example server IDs
 
 for servid in ${SERVID[@]}; do 
-	# hostlist+="alveo-u55c-$(printf "%02d" $servid).ethz.ch "
-	hostlist+="alveo-u55c-$(printf "%02d" $servid) "
+  hostlist+="alveo-u55c-$(printf "%02d" $servid) "
 done
 
 ##
-## Program FPGA
+## Actions
 ##
+GET_IP=1
+PROGRAM_FPGA=1
+DRV_INSERT=1
+GEN_ROUTING_TABLE=1
+GEN_NETWORK_CONFIG=1
 
-alveo_program()
-{
-	SERVERADDR=$1
-	SERVERPORT=$2
-	BOARDSN=$3
-	DEVICENAME=$4
-	BITPATH=$5
-	vivado -nolog -nojournal -mode batch -source ./program_alveo.tcl -tclargs $SERVERADDR $SERVERPORT $BOARDSN $DEVICENAME $BITPATH
-}
+##
+## Test Connections
+##
+echo "*** Activating server ..."
+echo " ** "
+parallel-ssh -H "$hostlist" "echo Login success!"
 
-declare -n qsfp_ip=FPGA_$3_IP_ADDRESS_HEX
-declare -n qsfp_mac=FPGA_$3_MAC_ADDRESS
+##
+## Get Server IPs
+##
+if [ $GET_IP -eq 1 ]; then
+  echo "*** Getting all server IPs..."
+  echo " ** "
+  # Function to format the output
+  format_output() {
+    local server=$1
+    local output=$2
 
-if [ $PROGRAM_FPGA -eq 1 ]; then
-	# activate servers (login with passwd to enable the nfs home mounting)
-	echo "*** Activating server ..."
-    echo " ** "
-        #parallel-ssh -H "$hostlist" -A -O PreferredAuthentications=password "echo Login success!"
-        parallel-ssh -H "$hostlist" "echo Login success!"
+    echo "$server,$output"
+  }
 
-	echo "*** Enabling Vivado hw_server ..."
-    echo " ** "
-        # this step will be timeout after 2 secs to avoid the shell blocking
-        parallel-ssh -H "$hostlist" -t 4 "source /tools/Xilinx/Vivado/2022.1/settings64.sh && hw_server &"
-
-	echo "*** Programming FPGA... (path: $BIT_PATH)"
-    echo " ** "
-        for servid in "${SERVID[@]}"; do
-            boardidx=$(expr $servid - 1)
-            alveo_program alveo-u55c-$(printf "%02d" $servid) 3121 ${BOARDSN[boardidx]} xcu280_u55c_0 $BASE_PATH/$BIT_PATH &
-        done
-	    wait
-	
-    echo "*** FPGA programmed"
-    echo " ** "
+  # Clear the output file
+  > $IP_OUTPUT_FILE
+  # Run the script on each server and collect the output
+  for hostname in ${hostlist[@]}; do
+    output=$(ssh $hostname -tt "cd ${SCRIPT_DIR} && ./get_ip_local.sh")
+    formatted_output=$(format_output "$hostname" "$output")
+    echo "$formatted_output" >> $IP_OUTPUT_FILE
+  done
+  # Display the results
+  echo "Results saved in $IP_OUTPUT_FILE"
+  cat $IP_OUTPUT_FILE
 fi
 
+##
+## Program FPGA and Load driver
+##
+echo "*** Programming FPGA: ${PROGRAM_FPGA}, Loading Driver ${DRV_INSERT}"
+echo " ** "
+# disable timeout by -t 0, need ~ 5min
+parallel-ssh -t 0 -H "$hostlist" -x '-tt' "cd ${SCRIPT_DIR} && ./hw_reset_local.sh ${PROGRAM_FPGA} ${DRV_INSERT}"
+# parallel-ssh -t 0 -H "$hostlist" -x '-tt' -i "cd ${SCRIPT_DIR} && ./hw_reset_local.sh ${PROGRAM_FPGA} ${DRV_INSERT}"
 
-Driver insertion
-
-
-if [ $DRV_INSERT -eq 1 ]; then
-	#NOTE: put -x '-tt' (pseudo terminal) here for sudo command
-	echo "*** Removing the driver ..."
-    echo " ** "
-	    parallel-ssh -H "$hostlist" -x '-tt' "sudo rmmod coyote_drv"
-	
-    echo "*** Rescan PCIe ..."	
-    echo " ** "
-	    #parallel-ssh -H "$hostlist" -x '-tt' 'sudo /opt/sgrt/cli/program/pci_hot_plug "$(hostname -s)"'
-        # read -p "Hot-reset done. Press enter to load the driver or Ctrl-C to exit."
-	    parallel-ssh -H "$hostlist" -x '-tt' 'upstream_port=$(/opt/sgrt/cli/get/get_fpga_device_param 1 upstream_port) && root_port=$(/opt/sgrt/cli/get/get_fpga_device_param 1 root_port) && LinkCtl=$(/opt/sgrt/cli/get/get_fpga_device_param 1 LinkCtl) && sudo /opt/sgrt/cli/program/pci_hot_plug 1 $upstream_port $root_port $LinkCtl'
-	    # read -p "Hot-reset done. Press enter to load the driver or Ctrl-C to exit."
-	echo "*** Compiling the driver ..."
-    echo " ** "
-	    parallel-ssh -H "$hostlist" "make -C $BASE_PATH/$DRV_PATH"
-	
-    echo "*** Loading the driver ..."
-    echo " ** "
-        qsfp_ip="DEVICE_1_IP_ADDRESS_HEX_$3"
-        qsfp_mac="DEVICE_1_MAC_ADDRESS_$3"
-
-	    parallel-ssh -H "$hostlist" -x '-tt' "sudo insmod $BASE_PATH/$DRV_PATH/coyote_drv.ko ip_addr_q$3=\$$qsfp_ip mac_addr_q$3=\$$qsfp_mac"
-        parallel-ssh -H "$hostlist" -x '-tt' "sudo /opt/sgrt/cli/program/fpga_chmod 0"
-
-        # shopt -s nullglob
-        # dev_arr=(/dev/fpga*)
-        # for fdev in "${!dev_arr[@]}"; do
-        #     echo $fdev
-        #     parallel-ssh -H "$hostlist" -x '-tt' "sudo /opt/sgrt/cli/program/fpga_chmod $fdev"
-        # done
-	
-    echo "*** Driver loaded"
-    echo " ** "
+##
+## Generate network config
+##
+if [ $GEN_ROUTING_TABLE -eq 1 ]; then
+  echo "*** Generating Routing Table..."
+  echo " ** "
+  # python3 routing_table_gen.py --hostlist ${hostlist[@]} --mode hop_test --hop-count 2
+	python3 routing_table_gen.py --hostlist ${hostlist[@]} --mode equal_divide
 fi
 
+if [ $GEN_NETWORK_CONFIG -eq 1 ]; then
+  echo "*** Generating All Config..."
+  echo " ** "
+  python3 rdma_connection_gen.py
+fi
 
+echo "*** Done"
+echo " ** "
