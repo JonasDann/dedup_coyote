@@ -13,7 +13,12 @@ DRV_INSERT=${2:-1}
 if [ $PROGRAM_FPGA -eq 1 ]; then
   echo "*** Loading bitstream..."
   echo " ** "
-  ${CLI_PATH}/sgutil program vivado --bitstream /mnt/scratch/jiayli/distributed/build_2023_1217_0913_6FSM_BF/bitstreams/cyt_top.bit
+  # ${CLI_PATH}/sgutil program vivado --bitstream /mnt/scratch/jiayli/distributed/build_2023_1229_2145_6FSM_noBF/bitstreams/cyt_top.bit
+  # ${CLI_PATH}/sgutil program vivado --bitstream /mnt/scratch/jiayli/distributed/build_2023_1217_0913_6FSM_BF/bitstreams/cyt_top.bit
+  # ${CLI_PATH}/sgutil program vivado --bitstream /mnt/scratch/jiayli/distributed/build_2023_1230_0852_8FSM_noBF/bitstreams/cyt_top.bit
+
+  # ${CLI_PATH}/sgutil program vivado --bitstream /mnt/scratch/jiayli/distributed/build_2024_0103_1630_6FSM_BF_10RoutingChannel/bitstreams/cyt_top.bit
+  ${CLI_PATH}/sgutil program vivado --bitstream /mnt/scratch/jiayli/distributed/build_2024_0103_2241_6FSM_BF_10RoutingChannel_Chord/bitstreams/cyt_top.bit
 fi
 
 if [ $DRV_INSERT -eq 1 ]; then

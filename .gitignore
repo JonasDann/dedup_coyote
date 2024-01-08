@@ -48,3 +48,4 @@ synth/
 *.upgrade_log
 *.dcp
 *.d
+page_resp/

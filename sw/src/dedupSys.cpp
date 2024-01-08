@@ -16,7 +16,7 @@
 namespace dedup {
 void dedupSys::sendMessage(int socket, const dedup::Message& message) {
     std::string msgStr = message.toString();
-    std::cout << "message sent: " + msgStr << std::endl;
+    // std::cout << "message sent: " + msgStr << std::endl;
     send(socket, msgStr.c_str(), msgStr.size(), 0);
     // Add error handling for the send operation
 }
@@ -74,6 +74,7 @@ ibvQpConn* dedupSys::getQpairConn(uint32_t qpid, std::string direction) {
     return nullptr;
 }
 
+// initialize with pre-computed network connection info
 void dedupSys::initializeNetworkInfo(std::filesystem::path base_path, std::filesystem::path ip_path, std::filesystem::path config_path){
     // step 1: get self hostname
     const auto hostname_long = boost::asio::ip::host_name();
@@ -144,6 +145,7 @@ void dedupSys::initializeNetworkInfo(std::filesystem::path base_path, std::files
 
 }
 
+// cpu all to all tcp connection setup
 void dedupSys::setupConnectionServer() {
     int retry_count = 0;
     int serverSocket = -1;
@@ -179,7 +181,7 @@ void dedupSys::setupConnectionServer() {
                 ::close(serverSocket);
                 serverSocket = -1;
             }
-            sleep(5);
+            sleep(10);
         }
     }
     if (retry_count == this->max_retry_count) {
@@ -192,12 +194,12 @@ void dedupSys::setupConnectionServer() {
 
         // Receive the introductory message from the client
         Message introMessage = this->receiveMessage(connfd);
-        std::cout << "receive message: " << introMessage.toString() << std::endl;
+        // std::cout << "receive message: " << introMessage.toString() << std::endl;
         // Ensure the message is of Intro type
         if (introMessage.getType() != Message::Type::SELF_INTRO) {
             // Handle unexpected message type, such as by logging or sending an error message
             ::close(connfd);
-            throw std::runtime_error("Received wrong message");
+            throw std::runtime_error("Received wrong message: " + introMessage.toString());
         }
 
         std::string client_hostname = introMessage.getContent();
@@ -279,7 +281,7 @@ void dedupSys::setupConnectionClient() {
                     ::close(sockfd);
                     sockfd = -1;
                 }
-                sleep(5);
+                sleep(10);
             }
         }
         free(service);
@@ -290,7 +292,7 @@ void dedupSys::setupConnections(){
     boost::asio::thread_pool pool(2); // Create a thread pool with 2 threads
     // Post tasks to the thread pool
     boost::asio::post(pool, [this] { setupConnectionServer(); });
-    sleep(10);
+    sleep(5);
     boost::asio::post(pool, [this] { setupConnectionClient(); });
 
     pool.join(); // Wait for all tasks in the pool to complete
@@ -304,6 +306,7 @@ void dedupSys::setupConnections(){
     // }
 }
 
+// RDMA Q pair exchange
 void dedupSys::exchangeQpMaster() {
     uint32_t recv_qpid;
     uint8_t ack;
@@ -449,7 +452,8 @@ void dedupSys::exchangeQps(){
     pool.join();
 }
 
-void dedupSys::syncBarrier() {
+// sync
+bool dedupSys::syncBarrier() {
     boost::asio::thread_pool pool(1 + 1); 
     // Broadcast sync message to all nodes
     boost::asio::post(pool, [this]{ 
@@ -463,15 +467,44 @@ void dedupSys::syncBarrier() {
         // Broadcast sync message to all nodes
         for (const auto& connection : this->server_sockets) {
             Message syncMessage = this->receiveMessage(connection.second);
-            std::cout << "receive message: " << syncMessage.toString() << std::endl;
+            // std::cout << "receive message: " << syncMessage.toString() << std::endl;
             if (syncMessage.getType() != Message::Type::SYNC) {
                 // Handle unexpected message type, such as by logging or sending an error message
-                throw std::runtime_error("Received wrong message");
+                throw std::runtime_error("Received wrong message: " + syncMessage.toString());
             }
             // std::string server_hostname = syncMessage.getContent();
         }
     });
     pool.join();
+    return true;
 }
+
+// routing table setup
+void dedupSys::setRoutingTable(cProcess* cproc){
+    uint32_t active_channel_count = this->node_routing_table.size();
+    if (active_channel_count > dedupSys::routing_channel_count){
+        throw std::runtime_error("Needed routing table size exceeds hardware available size");
+    }
+    if (this->node_routing_table[0].hostname != this->node_host_name){
+        throw std::runtime_error("Invalid routing table, first entry must correspond to local node");
+    }
+    cproc->setCSR(active_channel_count, static_cast<uint32_t>(CTLR::ACTIVE_CHANNEL_COUNT));
+    for (int index = 0 ; index < active_channel_count; index ++){
+        // nodeIdx
+        cproc->setCSR(this->node_routing_table[index].node_id, static_cast<uint32_t>(static_cast<uint32_t>(CTLR::ROUTING_TABLE_CONTENT_BASE) + 3 * index));
+        // start
+        cproc->setCSR(this->node_routing_table[index].hash_start, static_cast<uint32_t>(static_cast<uint32_t>(CTLR::ROUTING_TABLE_CONTENT_BASE) + 1 + 3 * index));
+        // len
+        cproc->setCSR(this->node_routing_table[index].hash_len, static_cast<uint32_t>(static_cast<uint32_t>(CTLR::ROUTING_TABLE_CONTENT_BASE) + 2 + 3 * index));
+    }
+    for (int index = 0 ; index < active_channel_count - 1; index ++){
+        auto connection_id = this->node_routing_table[index + 1].connection_id;
+        auto connection_qpn = this->getQpairConn(connection_id, "m2s")->getQpairStruct()->local.qpn;
+        cproc->setCSR(connection_qpn, static_cast<uint32_t>(static_cast<uint32_t>(CTLR::RDMA_QPN_TABLE_BASE) + index));
+    }
+    cproc->setCSR(1, static_cast<uint32_t>(CTLR::ROUTING_MODE));
+    cproc->setCSR(1, static_cast<uint32_t>(CTLR::UPDATE_ROUTING_TABLE));
+}
+
 
 }

@@ -51,4 +51,10 @@ std::vector<rdma_connection_entry> readRdmaConnections(const std::filesystem::pa
 std::unordered_map<std::string, std::pair<std::string, std::string>> readIpInfo(const std::filesystem::path& file_path);
 std::pair<fpga::ibvQpMap*, fpga::ibvQpMap*> setupConnections(const std::string& local_fpga_ip, const std::vector<rdma_connection_entry>& node_outgoing_connections, const std::vector<rdma_connection_entry>& node_incomming_connections);
 
+void * set_nop(void * startPtr);
+void * set_write_instr(void * startPtr, int startLBA, int LBALen, bool printEn);
+void * set_erase_instr(void * startPtr, uint32_t * sha3Val, bool printEn);
+void * set_read_instr(void * startPtr, uint32_t * sha3Val, bool printEn);
+bool parse_response(uint32_t pageCount, void* rspMem, int* goldenPgIsExec, int* goldenPgRefCount, int* goldenPgIdx, int goldenOpCode, ofstream& outfile);
+
 } // namespace dedup

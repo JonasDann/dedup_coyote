@@ -20,7 +20,7 @@ SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 ## Paths and Server IDs
 ##
 IP_OUTPUT_FILE="${SCRIPT_DIR}/server_ip.csv"
-SERVID=(6 8 9 10)  # Example server IDs
+SERVID=(6 8 10)  # Example server IDs
 
 for servid in ${SERVID[@]}; do 
   hostlist+="alveo-u55c-$(printf "%02d" $servid) "

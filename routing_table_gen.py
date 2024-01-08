@@ -32,7 +32,7 @@ def write_routing_table_to_file(routing_table, directory, file_name):
     for entry in routing_table:
       file.write(f"{','.join(map(str, entry))}\n")
 
-def generate_local_routing_table(full_routing_table, directory, node_count):
+def generate_local_routing_table_dense(full_routing_table, directory, node_count):
   half_node_count = node_count / 2
   max_shift = math.floor(math.log2(half_node_count)) # max possible 2^n in half_node_count
   for i, (hostname, _, _, _) in enumerate(full_routing_table):
@@ -52,6 +52,36 @@ def generate_local_routing_table(full_routing_table, directory, node_count):
             file.write(f"{','.join(map(str, full_routing_table[j2]))}\n")
             written_indices.add(j2)
     print(f"{hostname} local routing table saved to {os.path.join(directory, file_name)}")
+  
+def generate_local_routing_table_all2all(full_routing_table, directory, node_count):
+  for i, (hostname, _, _, _) in enumerate(full_routing_table):
+    file_name = f"routing_table_{i}_{hostname}.csv"
+    with open(os.path.join(directory, file_name), 'w') as file:
+      written_indices = set()
+      file.write(f"{','.join(map(str, full_routing_table[i]))}\n")
+      written_indices.add(i)
+      for shift in range(0, node_count):
+        j = (i + shift) % node_count
+        if j not in written_indices:
+          file.write(f"{','.join(map(str, full_routing_table[j]))}\n")
+          written_indices.add(j)
+    print(f"{hostname} local routing table saved to {os.path.join(directory, file_name)}")
+
+def generate_local_routing_table_chord(full_routing_table, directory, node_count):
+  max_shift = math.floor(math.log2(node_count)) # max possible 2^n in node_count
+  for i, (hostname, _, _, _) in enumerate(full_routing_table):
+    file_name = f"routing_table_{i}_{hostname}.csv"
+    with open(os.path.join(directory, file_name), 'w') as file:
+      written_indices = set()
+      file.write(f"{','.join(map(str, full_routing_table[i]))}\n")
+      written_indices.add(i)
+      for shift in range(0, max_shift + 1):
+        j1 = (i + (1 << shift)) % node_count
+        if j1 not in written_indices:
+          file.write(f"{','.join(map(str, full_routing_table[j1]))}\n")
+          written_indices.add(j1)
+    print(f"{hostname} local routing table saved to {os.path.join(directory, file_name)}")
+       
 
 ###############################
 ##
@@ -117,7 +147,7 @@ def main():
   routing_channel_count = 8
   routing_decision_bits = 16
 
-  if mode == 'equal_divide':
+  if mode in ['all2all', 'equal_divide', 'chord']:
     print(f"Generating Routing Table for {node_count=} with equal_divide mode")
     # Divide the ring equally for nodeIdx
     node_idx_values = calculate_equal_division(node_count, node_idx_width)
@@ -134,7 +164,12 @@ def main():
     write_routing_table_to_file(zip(hostlist, node_idx_values, hash_start_values, hash_len_values), save_directory, full_table_file_name)
     print(f"Full routing table saved to {os.path.join(save_directory, full_table_file_name)}")
     # import pdb;pdb.set_trace()
-    generate_local_routing_table(list(zip(hostlist, node_idx_values, hash_start_values, hash_len_values)), save_directory, len(hostlist))
+    if mode == 'equal_divide':
+      generate_local_routing_table_dense(list(zip(hostlist, node_idx_values, hash_start_values, hash_len_values)), save_directory, len(hostlist))
+    elif mode == 'all2all':
+      generate_local_routing_table_all2all(list(zip(hostlist, node_idx_values, hash_start_values, hash_len_values)), save_directory, len(hostlist))
+    else:
+      generate_local_routing_table_chord(list(zip(hostlist, node_idx_values, hash_start_values, hash_len_values)), save_directory, len(hostlist))
   elif mode == 'hop_test':
     if (hop_count + 1) > len(hostlist):
       raise ValueError('Host count is not enough to support the target hop count')
