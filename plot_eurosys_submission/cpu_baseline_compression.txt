@@ -1,0 +1,8 @@
+./main -n 16384 -d 0.5 -f 0.5 -h 8 -c 32 -e 1
+4.37637e+07ns
+
+2x PCIe round trip + fpga hash + cpu lookup + fpga compression
+latency:2x3.5us + 15us + 10 us + 25.16us = 57.16us
+latency(cpu) 1.46 ms
+latency(ours) 25.5 us + 25.16us = 50.66us
+cpu lookup: (hash+lookup)

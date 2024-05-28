@@ -1,0 +1,15 @@
+clb
+total: 162960
+used: 113206
+dedup: 68640
+fingerprint: 63166
+hashtable: 3508
+routingtable: 1154
+
+bram
+total: 2016
+used: 508
+dedup: 275.5
+fingerprint: 192
+hashtable: 2
+routingtable: 0
