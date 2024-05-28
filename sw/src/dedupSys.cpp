@@ -502,7 +502,7 @@ void dedupSys::setRoutingTable(cProcess* cproc){
         auto connection_qpn = this->getQpairConn(connection_id, "m2s")->getQpairStruct()->local.qpn;
         cproc->setCSR(connection_qpn, static_cast<uint32_t>(static_cast<uint32_t>(CTLR::RDMA_QPN_TABLE_BASE) + index));
     }
-    cproc->setCSR(1, static_cast<uint32_t>(CTLR::ROUTING_MODE));
+    cproc->setCSR(0, static_cast<uint32_t>(CTLR::ROUTING_MODE));
     cproc->setCSR(1, static_cast<uint32_t>(CTLR::UPDATE_ROUTING_TABLE));
 }
 
