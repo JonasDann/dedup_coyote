@@ -1,0 +1,51 @@
+/home/jiayli/projects/coyote-rdma/sw/build/main -n 16384 -g 1 -f 0.9921875 -s 1 -v 0
+- All pages passed: True - Average time across hosts: 5226124.0 ns
+alveo-u55c-01: 5278760.0 ns
+alveo-u55c-02: 5231830.0 ns
+alveo-u55c-03: 5246980.0 ns
+alveo-u55c-04: 5253670.0 ns
+alveo-u55c-05: 5207680.0 ns
+alveo-u55c-06: 5166960.0 ns
+alveo-u55c-07: 5240160.0 ns
+alveo-u55c-08: 5244260.0 ns
+alveo-u55c-09: 5187770.0 ns
+alveo-u55c-10: 5203170.0 ns
+
+/home/jiayli/projects/coyote-rdma/sw/build/main -n 16384 -g 0 -f 0.9921875 -s 1 -v 0
+- All pages passed: True - Average time across hosts: 5204244.0 ns
+alveo-u55c-01: 5243790.0 ns
+alveo-u55c-02: 5229100.0 ns
+alveo-u55c-03: 5225850.0 ns
+alveo-u55c-04: 5193610.0 ns
+alveo-u55c-05: 5201040.0 ns
+alveo-u55c-06: 5166630.0 ns
+alveo-u55c-07: 5213940.0 ns
+alveo-u55c-08: 5240280.0 ns
+alveo-u55c-09: 5195800.0 ns
+alveo-u55c-10: 5132400.0 ns
+
+/home/jiayli/projects/coyote-rdma/sw/build/main -n 16 -g 1 -f 0.9921875 -s 1 -v 0
+- All pages passed: True - Average time across hosts: 18789.86 ns
+alveo-u55c-01: 19201.2 ns
+alveo-u55c-02: 18738.0 ns
+alveo-u55c-03: 18600.5 ns
+alveo-u55c-04: 18655.5 ns
+alveo-u55c-05: 18690.2 ns
+alveo-u55c-06: 18377.0 ns
+alveo-u55c-07: 18510.0 ns
+alveo-u55c-08: 18923.5 ns
+alveo-u55c-09: 18903.5 ns
+alveo-u55c-10: 19299.2 ns
+
+/home/jiayli/projects/coyote-rdma/sw/build/main -n 16 -g 0 -f 0.9921875 -s 1 -v 0
+- All pages passed: True - Average time across hosts: 18478.3 ns
+alveo-u55c-01: 18770.5 ns
+alveo-u55c-02: 18645.8 ns
+alveo-u55c-03: 17478.5 ns
+alveo-u55c-04: 17901.2 ns
+alveo-u55c-05: 18973.2 ns
+alveo-u55c-06: 17986.8 ns
+alveo-u55c-07: 18552.5 ns
+alveo-u55c-08: 18966.0 ns
+alveo-u55c-09: 18981.0 ns
+alveo-u55c-10: 18527.5 ns

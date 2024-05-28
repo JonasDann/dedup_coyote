@@ -1,0 +1,25 @@
+/home/jiayli/projects/coyote-rdma/sw/build/main -n 16384 -f 0.9921875 -s 1 -v 0
+- All pages passed: True - Average time across hosts: 5312549.0 ns
+alveo-u55c-01: 5340840.0 ns
+alveo-u55c-02: 5349730.0 ns
+alveo-u55c-03: 5325840.0 ns
+alveo-u55c-04: 5320480.0 ns
+alveo-u55c-05: 5245830.0 ns
+alveo-u55c-06: 5289550.0 ns
+alveo-u55c-07: 5350060.0 ns
+alveo-u55c-08: 5307310.0 ns
+alveo-u55c-09: 5293780.0 ns
+alveo-u55c-10: 5302070.0 ns
+
+/home/jiayli/projects/coyote-rdma/sw/build/main -n 16 -f 0.9921875 -s 1 -v 0
+- All pages passed: True - Average time across hosts: 18644.159999999996 ns
+alveo-u55c-01: 18833.2 ns
+alveo-u55c-02: 18199.0 ns
+alveo-u55c-03: 18968.8 ns
+alveo-u55c-04: 19272.0 ns
+alveo-u55c-05: 18630.5 ns
+alveo-u55c-06: 17921.5 ns
+alveo-u55c-07: 18577.5 ns
+alveo-u55c-08: 18487.5 ns
+alveo-u55c-09: 18860.8 ns
+alveo-u55c-10: 18690.8 ns
