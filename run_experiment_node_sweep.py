@@ -115,46 +115,53 @@ def main():
     # param1 = [0]  # Add your values
     # fullnesses = [0]  # Add your values
     # commands = ['ls', 'whoami']  # Replace with your commands
-    # command = "/home/jiayli/projects/coyote-rdma/sw/build/main -n 16384 -d 1 -f 0.9921875 -s 1 -v 0"
-    # command = "/home/jiayli/projects/coyote-rdma/sw/build/main -n 16384 -g 0 -f 0.5 -s 1 -v 0"
-    command = "/home/jiayli/projects/coyote-rdma/sw/build/main -n 16384 -f 0.9921875 -s 1 -v 0"
+    command_lst = [
+    "/home/jiayli/projects/coyote-rdma/sw/build/main -n 16384 -d 1 -f 0.9921875 -s 1 -v 0",
+    "/home/jiayli/projects/coyote-rdma/sw/build/main -n 16384 -d 0 -f 0.9296875 -s 1 -v 0",
+    # "/home/jiayli/projects/coyote-rdma/sw/build/main -n 16384 -g 1 -f 0.9921875 -s 1 -v 0",
+    # "/home/jiayli/projects/coyote-rdma/sw/build/main -n 16384 -g 0 -f 0.9921875 -s 1 -v 0",
+    # "/home/jiayli/projects/coyote-rdma/sw/build/main -n 16384 -f 0.9921875 -s 1 -v 0",
 
-    # command = "/home/jiayli/projects/coyote-rdma/sw/build/main -n 16 -d 1 -f 0.5 -s 1 -v 0"
-    # command = "/home/jiayli/projects/coyote-rdma/sw/build/main -n 16 -g 0 -f 0.5 -s 1 -v 0"
-    # command = "/home/jiayli/projects/coyote-rdma/sw/build/main -n 16 -f 0.5 -s 1 -v 0"
+    "/home/jiayli/projects/coyote-rdma/sw/build/main -n 16 -d 1 -f 0.9921875 -s 1 -v 0",
+    "/home/jiayli/projects/coyote-rdma/sw/build/main -n 16 -d 0 -f 0.9921875 -s 1 -v 0",
+    # "/home/jiayli/projects/coyote-rdma/sw/build/main -n 16 -g 1 -f 0.9921875 -s 1 -v 0",
+    # "/home/jiayli/projects/coyote-rdma/sw/build/main -n 16 -g 0 -f 0.9921875 -s 1 -v 0",
+    # "/home/jiayli/projects/coyote-rdma/sw/build/main -n 16 -f 0.9921875 -s 1 -v 0",
+    ]
 
-    # for node_used in range(1, len(hostnames) + 1):
-    # for node_used in range(6, 11):
-    for node_used in [5]:
-        active_hosts = hostnames[0:node_used]
-        # routing table gen
-        with open("./server_ip.csv", 'w') as file:
-            for entry in host_ips[0:node_used]:
-                file.write(f"{entry}\n")
-        # config update
-        # subprocess.run("python3 routing_table_gen.py --hostlist " + ' '.join(active_hosts) + " --mode equal_divide", shell=True, capture_output=True)
-        # subprocess.run("python3 routing_table_gen.py --hostlist " + ' '.join(active_hosts) + " --mode all2all", shell=True, capture_output=True)
-        subprocess.run("python3 routing_table_gen.py --hostlist " + ' '.join(active_hosts) + " --mode chord", shell=True, capture_output=True)
-        subprocess.run("python3 rdma_connection_gen.py", shell=True, capture_output=True)
-        # Get current timestamp and create a directory
-        timestamp = datetime.now().strftime("%Y_%m%d_%H%M_%S")
-        output_dir = f"./experiment_tmp/node_sweep/{timestamp}"
-        os.makedirs(output_dir, exist_ok=True)
-        print(f"start execution: {node_used=}, {output_dir=}")
-        # Using ThreadPoolExecutor to run commands concurrently
-        with ThreadPoolExecutor(max_workers=node_used) as executor:
-            futures = [executor.submit(run_command_on_server, hostname, command, output_dir, hostname == active_hosts[0]) for hostname in active_hosts]
+    for command in command_lst:
+        # for node_used in range(1, len(hostnames) + 1):
+        # for node_used in range(6, 11):
+        for node_used in [10]:
+            active_hosts = hostnames[0:node_used]
+            # routing table gen
+            with open("./server_ip.csv", 'w') as file:
+                for entry in host_ips[0:node_used]:
+                    file.write(f"{entry}\n")
+            # config update
+            # subprocess.run("python3 routing_table_gen.py --hostlist " + ' '.join(active_hosts) + " --mode equal_divide", shell=True, capture_output=True)
+            # subprocess.run("python3 routing_table_gen.py --hostlist " + ' '.join(active_hosts) + " --mode all2all", shell=True, capture_output=True)
+            subprocess.run("python3 routing_table_gen.py --hostlist " + ' '.join(active_hosts) + " --mode chord", shell=True, capture_output=True)
+            subprocess.run("python3 rdma_connection_gen.py", shell=True, capture_output=True)
+            # Get current timestamp and create a directory
+            timestamp = datetime.now().strftime("%Y_%m%d_%H%M_%S")
+            output_dir = f"./experiment_tmp/node_sweep/{timestamp}"
+            os.makedirs(output_dir, exist_ok=True)
+            print(f"start execution: {node_used=}, {output_dir=}")
+            # Using ThreadPoolExecutor to run commands concurrently
+            with ThreadPoolExecutor(max_workers=node_used) as executor:
+                futures = [executor.submit(run_command_on_server, hostname, command, output_dir, hostname == active_hosts[0]) for hostname in active_hosts]
 
-        # Waiting for all futures to complete
-        for future in futures:
-            future.result()
-        print(f"end execution: {node_used=}, {output_dir=}, analyzing results...")
-        analyze_results(active_hosts, output_dir)
-        # analyze_results(active_hosts, "./experiment_tmp/node_sweep/2023_1228_1627_22")
+            # Waiting for all futures to complete
+            for future in futures:
+                future.result()
+            print(f"end execution: {node_used=}, {output_dir=}, analyzing results...")
+            analyze_results(active_hosts, output_dir)
+            # analyze_results(active_hosts, "./experiment_tmp/node_sweep/2023_1228_1627_22")
 
-        for count_down in range(70, 0, -10):
-            print(f"waiting, {count_down} seconds remaining ...")
-            time.sleep(10)
+            for count_down in range(70, 0, -10):
+                print(f"waiting, {count_down} seconds remaining ...")
+                time.sleep(10)
 
 if __name__ == "__main__":
     main()
