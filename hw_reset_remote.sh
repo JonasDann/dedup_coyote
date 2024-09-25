@@ -14,7 +14,9 @@ SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 ##
 ## Paths and Server IDs
 ##
-SERVID=(4 5)  # Example server IDs
+# SERVID=(1 2 3 5 6 7 8 9 10)  # Example server IDs
+SERVID="$@"  # Example server IDs
+echo "Server IDs: ${SERVID}"
 
 PROGRAM_FPGA=1
 DRV_INSERT=1

@@ -3,7 +3,9 @@
 
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 
-SERVID=(6 8)  # Example server IDs
+# SERVID=(1 2 3 5 6 7 8 9 10)  # Example server IDs
+SERVID="$@"
+echo "Server IDs: ${SERVID}"
 for servid in ${SERVID[@]}; do 
   hostlist+="alveo-u55c-$(printf "%02d" $servid) "
 done

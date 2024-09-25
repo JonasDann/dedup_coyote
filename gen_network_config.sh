@@ -14,8 +14,9 @@ SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 ##
 ## Paths and Server IDs
 ##
-SERVID=(6 8 9 10)  # Example server IDs
 # SERVID=(1 2 3 5 6 7 8 9 10)  # Example server IDs
+SERVID="$@"
+echo "Server IDs: ${SERVID}"
 
 GEN_ROUTING_TABLE=1
 GEN_NETWORK_CONFIG=1
