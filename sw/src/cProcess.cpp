@@ -2,7 +2,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <fstream>
-#include <stdlib.h>
+#include <malloc.h>
 #include <sys/mman.h>
 #include <sys/ioctl.h>
 #include <time.h> 
