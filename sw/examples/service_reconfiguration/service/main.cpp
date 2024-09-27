@@ -22,7 +22,7 @@
 #include <stdio.h>
 #include <sys/un.h>
 #include <errno.h>
-#include <wait.h>
+#include <sys/wait.h>
 #include <vector>
 #include <unordered_map>
 #include <mutex>

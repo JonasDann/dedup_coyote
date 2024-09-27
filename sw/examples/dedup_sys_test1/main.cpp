@@ -1,6 +1,6 @@
 #include <iostream>
 #include <string>
-#include <malloc.h>
+#include <stdlib.h>
 #include <time.h> 
 #include <sys/time.h>
 #include <sys/stat.h>
@@ -32,8 +32,7 @@ using namespace fpga;
 using namespace dedup;
 
 /* Def params */
-constexpr auto const targetRegion = 0;
-constexpr auto const nBenchRuns = 1;  
+constexpr auto const TARGET_REGION = 0;
 
 /**
  * @brief Average it out
@@ -91,9 +90,9 @@ int main(int argc, char *argv[])
   /* Module 1: get config */
   /************************************************/
   /************************************************/
-  string project_dir = "/home/jiayli/projects/coyote-rdma";
+  string project_dir = std::filesystem::current_path();
   auto dedup_sys = dedup::dedupSys();
-  dedup_sys.initializeNetworkInfo();
+  dedup_sys.initializeNetworkInfo(project_dir);
   dedup_sys.setupConnections();
   sync_on && dedup_sys.syncBarrier();
   sleep(1);
@@ -124,7 +123,7 @@ int main(int argc, char *argv[])
   assert(n_page%write_op_num==0 && "n_page should be an multiple of writeOpNum.");
 
   // Handles and alloc
-  cProcess cproc(targetRegion, getpid());
+  cProcess cproc(TARGET_REGION, getpid());
 
   // Step 0: 
   cout << endl << "Step0: system init" << endl;
@@ -134,20 +133,20 @@ int main(int argc, char *argv[])
   // confirm the init is done
   dedup_sys.waitSysInitDone(&cproc);
 
-  if (is_active){
+  if (is_active) {
     // drived parameters
-    uint32_t total_old_page_unique_count = (((uint32_t) (hash_table_fullness * dedupSys::node_ht_size) + 15)/16) * 16;
-    uint32_t batch_new_page_unique_count = (((uint32_t) (n_page * (1 - dup_ratio)) + 15)/16) * 16;
-    uint32_t batch_old_page_unique_count =  n_page - batch_new_page_unique_count;
-    uint32_t total_page_unique_count = total_old_page_unique_count + batch_new_page_unique_count;
-    assert (total_old_page_unique_count >= 0);
-    assert (batch_old_page_unique_count <= total_old_page_unique_count);
+    uint32_t initial_page_unique_count = (((uint32_t) (hash_table_fullness * dedupSys::node_ht_size) + 15)/16) * 16;
+    uint32_t new_page_unique_count = (((uint32_t) (n_page * (1 - dup_ratio)) + 15)/16) * 16;
+    uint32_t existing_page_unique_count =  n_page - new_page_unique_count;
+    uint32_t total_page_unique_count = initial_page_unique_count + new_page_unique_count;
+    assert (initial_page_unique_count >= 0);
+    assert (existing_page_unique_count <= initial_page_unique_count);
     assert (total_page_unique_count <= dedupSys::node_ht_size);
     cout << "Config: "<< endl;
-    cout << "1. number of initial page to fill up: " << total_old_page_unique_count << endl;
+    cout << "1. number of initial page to fill up: " << initial_page_unique_count << endl;
     cout << "2. number of page to run benchmark: " << n_page << endl;
-    cout << "3. number of existing page in benchmark: " << batch_old_page_unique_count << endl;
-    cout << "4. number of new page in benchmark: " << batch_new_page_unique_count << endl;
+    cout << "3. number of existing page in benchmark: " << existing_page_unique_count << endl;
+    cout << "4. number of new page in benchmark: " << new_page_unique_count << endl;
     
     // Step 1: Insert all old and new pages, get SHA3
     cout << endl << "Step1: get all page SHA3, total unique page count: "<< total_page_unique_count << endl;
@@ -172,12 +171,12 @@ int main(int argc, char *argv[])
 
     uint32_t n_insertion_round = (total_page_unique_count + 32 * dedupSys::pg_per_huge_pg - 1) / (32 * dedupSys::pg_per_huge_pg);
     cout << "insert all unique pages, in "<< n_insertion_round << " rounds"<< endl;
-    for (int insertion_rount_idx; insertion_rount_idx < n_insertion_round; insertion_rount_idx++){
-      uint32_t pg_idx_start = insertion_rount_idx * 32 * dedupSys::pg_per_huge_pg;
+    for (int insertion_round_idx = 0; insertion_round_idx < n_insertion_round; insertion_round_idx++) {
+      uint32_t pg_idx_start = insertion_round_idx * 32 * dedupSys::pg_per_huge_pg;
       uint32_t pg_idx_end = ((pg_idx_start + 32 * dedupSys::pg_per_huge_pg) > total_page_unique_count) ? total_page_unique_count : (pg_idx_start + 32 * dedupSys::pg_per_huge_pg);
       uint32_t pg_idx_count = pg_idx_end - pg_idx_start;
       uint32_t prep_instr_pg_num = (1 * dedupSys::instr_size + dedupSys::pg_size - 1) / dedupSys::pg_size; // 1 op
-      uint32_t n_hugepage_prep_req = ((pg_idx_count + prep_instr_pg_num) * dedupSys::pg_size + dedupSys::huge_pg_size -1) / dedupSys::huge_pg_size; // roundup, number of hugepage for n page
+      uint32_t n_hugepage_prep_req = ((pg_idx_count + prep_instr_pg_num) * dedupSys::pg_size + dedupSys::huge_pg_size - 1) / dedupSys::huge_pg_size; // roundup, number of hugepage for n page
       uint32_t n_hugepage_prep_rsp = (pg_idx_count * 64 + dedupSys::huge_pg_size - 1) / dedupSys::huge_pg_size; // roundup, number of huge page for 64B response from each page
 
       void* prepReqMem = cproc.getMem({CoyoteAlloc::HOST_2M, n_hugepage_prep_req});
@@ -191,12 +190,12 @@ int main(int argc, char *argv[])
 
           // set pages
           char* initPtrChar = (char*) initPtr;
-          memcpy(initPtrChar, all_unique_page_buffer + pg_idx_start * dedupSys::pg_size, pg_idx_count * dedupSys::pg_size);
+          memcpy(initPtrChar, all_unique_page_buffer + pg_idx_start * dedupSys::pg_size, pg_idx_count * dedupSys::pg_size); // copy pages to request buffer
           initPtrChar = initPtrChar + pg_idx_count * dedupSys::pg_size;
           initPtr = (void*) initPtrChar;
         } else {
           // set Insrt: nop
-          initPtr = set_nop(initPtr);
+          initPtr = set_nop(initPtr); // pad with nops to make page full. Otherwise, uninitialized random data could trigger instructions
         }
       }
 
@@ -210,9 +209,8 @@ int main(int argc, char *argv[])
         prepGoldenPgRefCount[pgIdx] = 1;
         prepGoldenPgIdx[pgIdx] = 100 + pg_idx_start + pgIdx;
       }
-
       
-      verbose && (cout << "round " << insertion_rount_idx << " start execution: page " << pg_idx_start << " to " << pg_idx_end << endl);
+      verbose && (cout << "round " << insertion_round_idx << " start execution: page " << pg_idx_start << " to " << pg_idx_end << endl);
       dedupSys::setReqStream(&cproc, prepReqMem, pg_idx_count + prep_instr_pg_num, prepRspMem);
       sync_on && dedup_sys.syncBarrier();
       dedupSys::setStart(&cproc);
@@ -227,7 +225,7 @@ int main(int argc, char *argv[])
       uint32_t* rspMemUInt32 = (uint32_t*) prepRspMem;
       verbose && (cout << "get all SHA3" << endl);
       for (int i=0; i < pg_idx_count; i++) {
-        memcpy(all_unique_page_sha3 + (pg_idx_start + i) * 8, (void*) (rspMemUInt32 + i*16), 32);
+        memcpy(all_unique_page_sha3 + (pg_idx_start + i) * 8, (void*) (rspMemUInt32 + i * 16), 32);
       }
       free(prepGoldenPgIsExec);
       free(prepGoldenPgRefCount);
@@ -236,15 +234,15 @@ int main(int argc, char *argv[])
       cproc.freeMem(prepRspMem);
     }
     cout << "all page passed?: " << (allPassed ? "True" : "False") << endl;
-    if(verbose){
+    if (verbose) {
       outfile.close();
     }
 
     cout << endl << "Step2: clean new pages" << endl;
-    if (batch_new_page_unique_count >= 0){
-      uint32_t num_page_to_clean = batch_new_page_unique_count;
+    if (new_page_unique_count >= 0) {
+      uint32_t num_page_to_clean = new_page_unique_count;
       uint32_t clean_instr_pg_num = (num_page_to_clean * dedupSys::instr_size + dedupSys::pg_size - 1) / dedupSys::pg_size; // data transfer is done in pages
-      uint32_t n_hugepage_clean_req = (clean_instr_pg_num * dedupSys::pg_size + dedupSys::huge_pg_size -1) / dedupSys::huge_pg_size;
+      uint32_t n_hugepage_clean_req = (clean_instr_pg_num * dedupSys::pg_size + dedupSys::huge_pg_size - 1) / dedupSys::huge_pg_size;
       uint32_t n_hugepage_clean_rsp = (num_page_to_clean * 64 + dedupSys::huge_pg_size-1) / dedupSys::huge_pg_size;
       void* cleanReqMem = cproc.getMem({CoyoteAlloc::HOST_2M, n_hugepage_clean_req});
       void* cleanRspMem = cproc.getMem({CoyoteAlloc::HOST_2M, n_hugepage_clean_rsp});
@@ -253,7 +251,7 @@ int main(int argc, char *argv[])
       for (int instrIdx = 0; instrIdx < clean_instr_pg_num * dedupSys::instr_per_page; instrIdx ++){
         if (instrIdx < num_page_to_clean){
           // set instr: erase instr
-          int pgIdx = total_old_page_unique_count + instrIdx;
+          int pgIdx = initial_page_unique_count + instrIdx;
           initPtr = set_erase_instr(initPtr, all_unique_page_sha3 + pgIdx * 8, false);
         } else {
           // set Insrt: nop
@@ -315,18 +313,18 @@ int main(int argc, char *argv[])
       vector<int> benchmark_insert_page_idx_lst;
       {
         vector<int> random_old_page_idx_lst;
-        for (int i = 0; i < total_old_page_unique_count; i++){
+        for (int i = 0; i < initial_page_unique_count; i++){
           random_old_page_idx_lst.push_back(i);
         }
         
         random_shuffle(random_old_page_idx_lst.begin(), random_old_page_idx_lst.end());
         
         for (int i = 0; i < benchmark_insert_pg_num; i++){
-          if (i < batch_new_page_unique_count){
-            benchmark_insert_page_idx_lst.push_back(i + total_old_page_unique_count);
+          if (i < new_page_unique_count){
+            benchmark_insert_page_idx_lst.push_back(i + initial_page_unique_count);
           } else {
             // random one from old
-            benchmark_insert_page_idx_lst.push_back(random_old_page_idx_lst[i - batch_new_page_unique_count]);
+            benchmark_insert_page_idx_lst.push_back(random_old_page_idx_lst[i - new_page_unique_count]);
           }
         }
       }
@@ -359,7 +357,7 @@ int main(int argc, char *argv[])
       int* benchInsertGoldenPgIdx = (int*) malloc(benchmark_insert_pg_num * sizeof(int));
 
       for (int pgIdx = 0; pgIdx < benchmark_insert_pg_num; pgIdx ++){
-        if (benchmark_insert_page_idx_lst[pgIdx] < total_old_page_unique_count){
+        if (benchmark_insert_page_idx_lst[pgIdx] < initial_page_unique_count){
           // old page
           benchInsertGoldenPgIsExec[pgIdx] = 0;
           benchInsertGoldenPgRefCount[pgIdx] = 2;
@@ -430,7 +428,7 @@ int main(int argc, char *argv[])
       int* benchCleanGoldenPgIdx = (int*) malloc(benchmark_num_page_to_clean * sizeof(int));
 
       for (int pgIdx = 0; pgIdx < benchmark_num_page_to_clean; pgIdx ++){
-        if (benchmark_insert_page_idx_lst[pgIdx] < total_old_page_unique_count){
+        if (benchmark_insert_page_idx_lst[pgIdx] < initial_page_unique_count){
           // old page
           benchCleanGoldenPgIsExec[pgIdx] = 0;
           benchCleanGoldenPgRefCount[pgIdx] = 1;
@@ -473,8 +471,8 @@ int main(int argc, char *argv[])
     cout << endl << "benchmarking done, avg time used: " << vctr_avg(times_lst) << " ns" << endl;
 
     cout << endl << "Step4: clean up all remaining pages" << endl;
-    if (total_old_page_unique_count >= 0){
-      uint32_t final_num_page_to_clean = total_old_page_unique_count;
+    if (initial_page_unique_count >= 0){
+      uint32_t final_num_page_to_clean = initial_page_unique_count;
       uint32_t final_clean_instr_pg_num = (final_num_page_to_clean * dedupSys::instr_size + dedupSys::pg_size - 1) / dedupSys::pg_size; // data transfer is done in pages
       uint32_t n_hugepage_final_clean_req = (final_clean_instr_pg_num * dedupSys::pg_size + dedupSys::huge_pg_size -1) / dedupSys::huge_pg_size;
       uint32_t n_hugepage_final_clean_rsp = (final_num_page_to_clean * 64 + dedupSys::huge_pg_size - 1) / dedupSys::huge_pg_size;

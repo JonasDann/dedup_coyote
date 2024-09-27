@@ -4,7 +4,7 @@
 
 #include <iostream>
 #include <string>
-#include <malloc.h>
+#include <stdlib.h>
 #include <time.h> 
 #include <sys/time.h>  
 #include <chrono>

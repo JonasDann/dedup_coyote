@@ -78,6 +78,7 @@ def analyze_results(hostnames, output_dir):
             time_results.setdefault(command, []).append(time)
 
     # Print results
+    print(time_results)
     for command, passed_list in command_results.items():
         all_passed = all(passed_list)
         avg_time = sum(time_results[command]) / len(time_results[command])
@@ -116,14 +117,14 @@ def main():
     # fullnesses = [0]  # Add your values
     # commands = ['ls', 'whoami']  # Replace with your commands
     command_lst = [
-    "/home/jiayli/projects/coyote-rdma/sw/build/main -n 16384 -d 1 -f 0.9921875 -s 1 -v 0",
-    "/home/jiayli/projects/coyote-rdma/sw/build/main -n 16384 -d 0 -f 0.9296875 -s 1 -v 0",
+    str(os.getcwd()) + "/sw/build/main -n 16384 -d 1 -f 0.9921875 -s 1 -v 0",
+    #"/home/jiayli/projects/coyote-rdma/sw/build/main -n 16384 -d 0 -f 0.9296875 -s 1 -v 0",
     # "/home/jiayli/projects/coyote-rdma/sw/build/main -n 16384 -g 1 -f 0.9921875 -s 1 -v 0",
     # "/home/jiayli/projects/coyote-rdma/sw/build/main -n 16384 -g 0 -f 0.9921875 -s 1 -v 0",
     # "/home/jiayli/projects/coyote-rdma/sw/build/main -n 16384 -f 0.9921875 -s 1 -v 0",
 
-    "/home/jiayli/projects/coyote-rdma/sw/build/main -n 16 -d 1 -f 0.9921875 -s 1 -v 0",
-    "/home/jiayli/projects/coyote-rdma/sw/build/main -n 16 -d 0 -f 0.9921875 -s 1 -v 0",
+    #"/home/jiayli/projects/coyote-rdma/sw/build/main -n 16 -d 1 -f 0.9921875 -s 1 -v 0",
+    #"/home/jiayli/projects/coyote-rdma/sw/build/main -n 16 -d 0 -f 0.9921875 -s 1 -v 0",
     # "/home/jiayli/projects/coyote-rdma/sw/build/main -n 16 -g 1 -f 0.9921875 -s 1 -v 0",
     # "/home/jiayli/projects/coyote-rdma/sw/build/main -n 16 -g 0 -f 0.9921875 -s 1 -v 0",
     # "/home/jiayli/projects/coyote-rdma/sw/build/main -n 16 -f 0.9921875 -s 1 -v 0",

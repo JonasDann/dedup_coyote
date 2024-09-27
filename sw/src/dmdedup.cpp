@@ -1,7 +1,7 @@
 #include "dmdedup.hpp"
 #include <stdint.h>
 #include <iostream>
-#include <malloc.h>
+#include <stdlib.h>
 #include <stdexcept>
 #include <cstring>
 #include <cstdio>

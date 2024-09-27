@@ -122,7 +122,7 @@ public:
         }
     }
     // initialize with pre-computed network connection info
-    void initializeNetworkInfo(std::filesystem::path base_path = "/home/jiayli/projects/coyote-rdma", std::filesystem::path ip_path = "server_ip.csv", std::filesystem::path config_path = "rdma_connection");
+    void initializeNetworkInfo(std::filesystem::path base_path, std::filesystem::path ip_path = "server_ip.csv", std::filesystem::path config_path = "rdma_connection");
     // cpu all to all tcp connection setup
     void setupConnections();
     // RDMA Q pair exchange
