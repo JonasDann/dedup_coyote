@@ -34,12 +34,139 @@ using namespace dedup;
 /* Def params */
 constexpr auto const TARGET_REGION = 0;
 
+enum Instr {
+  WRITE,
+  ERASE
+};
+
+struct Context {
+  dedupSys &dedup_sys;
+  cProcess &cproc;
+  char *all_unique_page_buffer;
+  uint32_t *all_unique_page_sha3;
+  bool verbose;
+  bool sync_on;
+  int *goldenPgIsExec;
+  int *goldenPgRefCount;
+  int *goldenPgIdx;
+};
+
 /**
  * @brief Average it out
  * 
  */
 double vctr_avg(std::vector<double> const& v) {
   return 1.0 * std::accumulate(v.begin(), v.end(), 0LL) / v.size();
+}
+
+uint32_t ceilPage(uint32_t byteCount) {
+  return (byteCount + dedupSys::pg_size - 1) / dedupSys::pg_size;
+}
+
+uint32_t ceilHugePage(uint32_t pageCount) {
+  return (pageCount + dedupSys::huge_pg_size - 1) / dedupSys::huge_pg_size;
+}
+
+void updateGolden(Context &ctx, Instr &instr, uint32_t pgIdx, uint32_t lba) {
+  ctx.goldenPgIsExec[pgIdx] = (ctx.goldenPgRefCount[pgIdx] > 0) ? 0 : 1;
+  if (instr == WRITE) {
+    ctx.goldenPgRefCount[pgIdx] += 1;
+    ctx.goldenPgIdx[pgIdx] = lba;
+  } else {
+    assert(ctx.goldenPgRefCount > 0);
+    ctx.goldenPgRefCount[pgIdx] -= 1;
+    ctx.goldenPgIdx[pgIdx] = 0;
+  }
+}
+
+bool modPages(Context &ctx, Instr instr, uint32_t instr_count, uint32_t lba_offset, vector<uint32_t> &pg_idx_lst, stringstream &outfile_name, double &time) {
+  uint32_t pg_count = pg_idx_lst.size();
+  uint32_t data_pg_count = (instr == WRITE) ? pg_count : 0; // How much page data actually has to be communicated
+  uint32_t instr_pg_num = ceilPage(instr_count * dedupSys::instr_size); // 1 op
+  uint32_t n_hugepage_req = ceilHugePage(data_pg_count + instr_pg_num); // roundup, number of hugepage for n page
+  uint32_t n_hugepage_rsp = ceilHugePage(pg_count * 64); // roundup, number of huge page for 64B response from each page
+
+  void* reqMem = ctx.cproc.getMem({CoyoteAlloc::HOST_2M, n_hugepage_req});
+  void* rspMem = ctx.cproc.getMem({CoyoteAlloc::HOST_2M, n_hugepage_rsp});
+
+  void* initPtr = reqMem;
+  for (int instrIdx = 0; instrIdx < dedupSys::instr_per_page * instr_pg_num; instrIdx ++) {
+    if (instrIdx < instr_count) {
+      if (instr == WRITE) {
+        uint32_t insert_page_per_instr = pg_count / instr_count;
+        uint32_t curr_pg_start = instrIdx * insert_page_per_instr;
+        // set instr: write instr
+        initPtr = set_write_instr(initPtr, lba_offset + curr_pg_start, insert_page_per_instr, false);
+
+        // set pages
+        char* initPtrChar = (char*) initPtr;
+        for (int i = 0; i < insert_page_per_instr; i ++) {
+          int pgIdx = pg_idx_lst[instrIdx * insert_page_per_instr + i];
+          memcpy(initPtrChar + i * dedupSys::pg_size, ctx.all_unique_page_buffer + pgIdx * dedupSys::pg_size, dedupSys::pg_size); // copy pages to request buffer
+        }
+        initPtrChar = initPtrChar + insert_page_per_instr * dedupSys::pg_size;
+        initPtr = (void*) initPtrChar;
+      } else {
+        initPtr = set_erase_instr(initPtr, ctx.all_unique_page_sha3 + pg_idx_lst[instrIdx] * 8, false);
+      }
+    } else {
+      // set Insrt: nop
+      initPtr = set_nop(initPtr); // pad with nops to make page full. Otherwise, uninitialized random data could trigger instructions
+    }
+  }
+
+  for (int i = 0; i < pg_count; i ++){
+    updateGolden(ctx, instr, pg_idx_lst[i], lba_offset + i);
+  }
+  
+  ctx.verbose && (std::cout << "start execution" << endl);
+  dedupSys::setReqStream(&ctx.cproc, reqMem, data_pg_count + instr_pg_num, rspMem);
+  ctx.sync_on && ctx.dedup_sys.syncBarrier();
+
+  auto begin_time = std::chrono::high_resolution_clock::now();
+  dedupSys::setStart(&ctx.cproc);
+  dedupSys::waitExecDone(&ctx.cproc, pg_count);
+  auto end_time = std::chrono::high_resolution_clock::now();
+
+  time = std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - begin_time).count();
+  ctx.verbose && (std::cout << "time used: " << time << "ns" << std::endl);
+
+  dedupSys::getExecDone(&ctx.cproc, data_pg_count + instr_pg_num, pg_count);
+
+  /** parse and print the page response */
+  ofstream outfile;
+  if (ctx.verbose) {
+    outfile.open(outfile_name.str(), ios::out);
+  }
+
+  ctx.verbose && (std::cout << "parsing the results" << endl);
+  bool check_res = parse_response(pg_count, rspMem, ctx.goldenPgIsExec, ctx.goldenPgRefCount, ctx.goldenPgIdx, (instr == WRITE) ? 1 : 2, outfile);
+
+  if (instr == WRITE) { // Copy SHA3 hashes from response to buffer
+    uint32_t* rspMemUInt32 = (uint32_t*) rspMem;
+    ctx.verbose && (std::cout << "get all SHA3" << endl);
+    for (int i=0; i < pg_count; i++) {
+      memcpy(ctx.all_unique_page_sha3 + pg_idx_lst[i] * 8, (void*) (rspMemUInt32 + i * 16), 32);
+    }
+  }
+
+  if (ctx.verbose) {
+    outfile.close();
+  }
+
+  ctx.cproc.freeMem(reqMem);
+  ctx.cproc.freeMem(rspMem);
+
+  std::cout << "all page passed?: " << (check_res ? "True" : "False") << endl;
+  return check_res;
+}
+
+bool modPages(Context &ctx, Instr instr, uint32_t instr_count, uint32_t lba_offset, uint32_t pg_idx_start, uint32_t pg_count, stringstream &outfile_name, double &time) {
+  vector<uint32_t> pg_idx_lst;
+  for (size_t i = 0; i < pg_count; i++) {
+    pg_idx_lst.push_back(pg_idx_start + i);
+  }
+  modPages(ctx, instr, instr_count, lba_offset + pg_idx_start, pg_idx_lst, outfile_name, time);
 }
 
 /**
@@ -126,7 +253,7 @@ int main(int argc, char *argv[])
   cProcess cproc(TARGET_REGION, getpid());
 
   // Step 0: 
-  cout << endl << "Step0: system init" << endl;
+  std::cout << endl << "Step0: system init" << endl;
   dedup_sys.setSysInit(&cproc);
   // setup routing table
   dedup_sys.setRoutingTable(&cproc);
@@ -142,15 +269,15 @@ int main(int argc, char *argv[])
     assert (initial_page_unique_count >= 0);
     assert (existing_page_unique_count <= initial_page_unique_count);
     assert (total_page_unique_count <= dedupSys::node_ht_size);
-    cout << "Config: "<< endl;
-    cout << "1. number of initial page to fill up: " << initial_page_unique_count << endl;
-    cout << "2. number of page to run benchmark: " << n_page << endl;
-    cout << "3. number of existing page in benchmark: " << existing_page_unique_count << endl;
-    cout << "4. number of new page in benchmark: " << new_page_unique_count << endl;
+    std::cout << "Config: "<< endl;
+    std::cout << "1. number of initial page to fill up: " << initial_page_unique_count << endl;
+    std::cout << "2. number of page to run benchmark: " << n_page << endl;
+    std::cout << "3. number of existing page in benchmark: " << existing_page_unique_count << endl;
+    std::cout << "4. number of new page in benchmark: " << new_page_unique_count << endl;
     
-    // Step 1: Insert all old and new pages, get SHA3
-    cout << endl << "Step1: get all page SHA3, total unique page count: "<< total_page_unique_count << endl;
-    verbose && (cout << "Preparing unique page data" << endl);
+    // Step 1: Insert all initial and new pages, get SHA3
+    std::cout << endl << "Step1: get all page SHA3, total unique page count: "<< total_page_unique_count << endl;
+    verbose && (std::cout << "Preparing unique page data" << endl);
     char* all_unique_page_buffer = (char*) malloc(total_page_unique_count * dedupSys::pg_size);
     uint32_t* all_unique_page_sha3 = (uint32_t*) malloc(total_page_unique_count * 32); // SHA3 256bit = 32B
     assert(all_unique_page_buffer != NULL);
@@ -160,377 +287,90 @@ int main(int argc, char *argv[])
     int res = read(urand, all_unique_page_buffer, total_page_unique_count * dedupSys::pg_size);
     close(urand);
 
-    // support 64x2M page address mapping, do 32 in one insertion round
-    ofstream outfile;
-    if (verbose){
-      std::stringstream outfile_name;
-      outfile_name << output_dir << "/resp_" << timeStamp.str() << "_step1.txt";
-      outfile.open(outfile_name.str(), ios::out);
-    }
-    bool allPassed = true;
+    int* goldenPgIsExec = (int*) malloc(total_page_unique_count * sizeof(int));
+    int* goldenPgRefCount = (int*) malloc(total_page_unique_count * sizeof(int));
+    int* goldenPgIdx = (int*) malloc(total_page_unique_count * sizeof(int));
+    memset(goldenPgRefCount, 0, total_page_unique_count * sizeof(int));
 
+    Context ctx{dedup_sys, cproc, all_unique_page_buffer, all_unique_page_sha3, verbose, sync_on, goldenPgIsExec, goldenPgRefCount, goldenPgIdx};
+    // support 64x2M page address mapping, do 32 in one insertion round
     uint32_t n_insertion_round = (total_page_unique_count + 32 * dedupSys::pg_per_huge_pg - 1) / (32 * dedupSys::pg_per_huge_pg);
-    cout << "insert all unique pages, in "<< n_insertion_round << " rounds"<< endl;
+    std::cout << "insert all unique pages, in "<< n_insertion_round << " rounds"<< endl;
+
     for (int insertion_round_idx = 0; insertion_round_idx < n_insertion_round; insertion_round_idx++) {
       uint32_t pg_idx_start = insertion_round_idx * 32 * dedupSys::pg_per_huge_pg;
       uint32_t pg_idx_end = ((pg_idx_start + 32 * dedupSys::pg_per_huge_pg) > total_page_unique_count) ? total_page_unique_count : (pg_idx_start + 32 * dedupSys::pg_per_huge_pg);
       uint32_t pg_idx_count = pg_idx_end - pg_idx_start;
-      uint32_t prep_instr_pg_num = (1 * dedupSys::instr_size + dedupSys::pg_size - 1) / dedupSys::pg_size; // 1 op
-      uint32_t n_hugepage_prep_req = ((pg_idx_count + prep_instr_pg_num) * dedupSys::pg_size + dedupSys::huge_pg_size - 1) / dedupSys::huge_pg_size; // roundup, number of hugepage for n page
-      uint32_t n_hugepage_prep_rsp = (pg_idx_count * 64 + dedupSys::huge_pg_size - 1) / dedupSys::huge_pg_size; // roundup, number of huge page for 64B response from each page
+      stringstream outfile_name;
+      outfile_name << output_dir << "/resp_" << timeStamp.str() << "_step1.txt";
+      std::cout << "round " << insertion_round_idx;
 
-      void* prepReqMem = cproc.getMem({CoyoteAlloc::HOST_2M, n_hugepage_prep_req});
-      void* prepRspMem = cproc.getMem({CoyoteAlloc::HOST_2M, n_hugepage_prep_rsp});
-
-      void* initPtr = prepReqMem;
-      for (int instrIdx = 0; instrIdx < dedupSys::instr_per_page * prep_instr_pg_num; instrIdx ++){
-        if (instrIdx < 1){
-          // set instr: write instr
-          initPtr = set_write_instr(initPtr, 100 + pg_idx_start, pg_idx_count, false);
-
-          // set pages
-          char* initPtrChar = (char*) initPtr;
-          memcpy(initPtrChar, all_unique_page_buffer + pg_idx_start * dedupSys::pg_size, pg_idx_count * dedupSys::pg_size); // copy pages to request buffer
-          initPtrChar = initPtrChar + pg_idx_count * dedupSys::pg_size;
-          initPtr = (void*) initPtrChar;
-        } else {
-          // set Insrt: nop
-          initPtr = set_nop(initPtr); // pad with nops to make page full. Otherwise, uninitialized random data could trigger instructions
-        }
-      }
-
-      // golden res
-      int* prepGoldenPgIsExec = (int*) malloc(pg_idx_count * sizeof(int));
-      int* prepGoldenPgRefCount = (int*) malloc(pg_idx_count * sizeof(int));
-      int* prepGoldenPgIdx = (int*) malloc(pg_idx_count * sizeof(int));
-
-      for (int pgIdx = 0; pgIdx < pg_idx_count; pgIdx ++){
-        prepGoldenPgIsExec[pgIdx] = 1;
-        prepGoldenPgRefCount[pgIdx] = 1;
-        prepGoldenPgIdx[pgIdx] = 100 + pg_idx_start + pgIdx;
-      }
-      
-      verbose && (cout << "round " << insertion_round_idx << " start execution: page " << pg_idx_start << " to " << pg_idx_end << endl);
-      dedupSys::setReqStream(&cproc, prepReqMem, pg_idx_count + prep_instr_pg_num, prepRspMem);
-      sync_on && dedup_sys.syncBarrier();
-      dedupSys::setStart(&cproc);
-      // cproc.setCSR(1, static_cast<uint32_t>(CTLR::START));
-      sleep(1);
-
-      dedupSys::getExecDone(&cproc, pg_idx_count + prep_instr_pg_num, pg_idx_count);
-      /** parse and print the page response */
-      verbose && (cout << "parsing the results" << endl);
-      bool check_res = parse_response(pg_idx_count, prepRspMem, prepGoldenPgIsExec, prepGoldenPgRefCount, prepGoldenPgIdx, 1, outfile);
-      allPassed = allPassed && check_res;
-      uint32_t* rspMemUInt32 = (uint32_t*) prepRspMem;
-      verbose && (cout << "get all SHA3" << endl);
-      for (int i=0; i < pg_idx_count; i++) {
-        memcpy(all_unique_page_sha3 + (pg_idx_start + i) * 8, (void*) (rspMemUInt32 + i * 16), 32);
-      }
-      free(prepGoldenPgIsExec);
-      free(prepGoldenPgRefCount);
-      free(prepGoldenPgIdx);
-      cproc.freeMem(prepReqMem);
-      cproc.freeMem(prepRspMem);
-    }
-    cout << "all page passed?: " << (allPassed ? "True" : "False") << endl;
-    if (verbose) {
-      outfile.close();
+      double time;
+      modPages(ctx, Instr::WRITE, 1, 100, pg_idx_start, pg_idx_count, outfile_name, time);
     }
 
-    cout << endl << "Step2: clean new pages" << endl;
+    std::cout << endl << "Step2: clean new pages" << endl;
     if (new_page_unique_count >= 0) {
-      uint32_t num_page_to_clean = new_page_unique_count;
-      uint32_t clean_instr_pg_num = (num_page_to_clean * dedupSys::instr_size + dedupSys::pg_size - 1) / dedupSys::pg_size; // data transfer is done in pages
-      uint32_t n_hugepage_clean_req = (clean_instr_pg_num * dedupSys::pg_size + dedupSys::huge_pg_size - 1) / dedupSys::huge_pg_size;
-      uint32_t n_hugepage_clean_rsp = (num_page_to_clean * 64 + dedupSys::huge_pg_size-1) / dedupSys::huge_pg_size;
-      void* cleanReqMem = cproc.getMem({CoyoteAlloc::HOST_2M, n_hugepage_clean_req});
-      void* cleanRspMem = cproc.getMem({CoyoteAlloc::HOST_2M, n_hugepage_clean_rsp});
+      std::stringstream outfile_name;
+      outfile_name << output_dir << "/resp_"<< timeStamp.str() << "_step2.txt";
 
-      void* initPtr = cleanReqMem;
-      for (int instrIdx = 0; instrIdx < clean_instr_pg_num * dedupSys::instr_per_page; instrIdx ++){
-        if (instrIdx < num_page_to_clean){
-          // set instr: erase instr
-          int pgIdx = initial_page_unique_count + instrIdx;
-          initPtr = set_erase_instr(initPtr, all_unique_page_sha3 + pgIdx * 8, false);
-        } else {
-          // set Insrt: nop
-          initPtr = set_nop(initPtr);
-        }
-      }
-
-      // golden res
-      int* cleanGoldenPgIsExec = (int*) malloc(num_page_to_clean * sizeof(int));
-      int* cleanGoldenPgRefCount = (int*) malloc(num_page_to_clean * sizeof(int));
-      int* cleanGoldenPgIdx = (int*) malloc(num_page_to_clean * sizeof(int));
-
-      for (int pgIdx = 0; pgIdx < num_page_to_clean; pgIdx ++){
-        cleanGoldenPgIsExec[pgIdx] = 1;
-        cleanGoldenPgRefCount[pgIdx] = 0;
-        cleanGoldenPgIdx[pgIdx] = 0;
-      }
-
-      dedupSys::setReqStream(&cproc, cleanReqMem, clean_instr_pg_num, cleanRspMem);
-      sync_on && dedup_sys.syncBarrier();
-      dedupSys::setStart(&cproc);
-      sleep(1);
-      dedupSys::getExecDone(&cproc, clean_instr_pg_num, num_page_to_clean);
-
-      ofstream outfile2;
-      if (verbose){
-        std::stringstream outfile_name2;
-        outfile_name2 << output_dir << "/resp_"<< timeStamp.str() << "_step2.txt";
-        outfile2.open(outfile_name2.str(), ios::out);
-      }
-      
-      verbose && (cout << "parsing the results" << endl);
-      allPassed = parse_response(num_page_to_clean, cleanRspMem, cleanGoldenPgIsExec, cleanGoldenPgRefCount, cleanGoldenPgIdx, 2, outfile2);
-      cout << "all page passed?: " << (allPassed ? "True" : "False") << endl;
-      if(verbose){
-        outfile2.close();
-      }
-      free(cleanGoldenPgIsExec);
-      free(cleanGoldenPgRefCount);
-      free(cleanGoldenPgIdx);
-      cproc.freeMem(cleanReqMem);
-      cproc.freeMem(cleanRspMem);
+      double time;
+      modPages(ctx, Instr::ERASE, new_page_unique_count, 0, initial_page_unique_count, new_page_unique_count, outfile_name, time);
     }
 
-    cout << endl << "Step3: start benchmarking, insertion only" << endl;
+    std::cout << endl << "Step3: start benchmarking, insertion only" << endl;
     std::vector<double> times_lst;
-    cout << n_bench_run << " runs in total" << endl;
-    for (int bench_idx = 0; bench_idx < n_bench_run; bench_idx ++){
-      verbose && (cout << endl << "starting run " << bench_idx + 1 << "/" << n_bench_run << endl);
-      uint32_t benchmark_insert_pg_num = n_page;
-      uint32_t benchmark_insert_page_per_instr = benchmark_insert_pg_num / write_op_num;
-      uint32_t benchmark_insert_instr_pg_num = (write_op_num * dedupSys::instr_size + dedupSys::pg_size - 1) / dedupSys::pg_size; // data transfer is done in pages
-      uint32_t n_hugepage_bench_insert_req = ((benchmark_insert_pg_num + benchmark_insert_instr_pg_num) * dedupSys::pg_size + dedupSys::huge_pg_size - 1) / dedupSys::huge_pg_size;
-      uint32_t n_hugepage_bench_insert_rsp = (benchmark_insert_pg_num * 64 + dedupSys::huge_pg_size - 1) / dedupSys::huge_pg_size;
-      void* benchInsertReqMem = cproc.getMem({CoyoteAlloc::HOST_2M, n_hugepage_bench_insert_req});
-      void* benchInsertRspMem = cproc.getMem({CoyoteAlloc::HOST_2M, n_hugepage_bench_insert_rsp});
-
-      // get page index
-      vector<int> benchmark_insert_page_idx_lst;
+    std::cout << n_bench_run << " runs in total" << endl;
+    for (int bench_idx = 0; bench_idx < n_bench_run; bench_idx++) {
+      // create page insertion order
+      vector<uint32_t> benchmark_page_idx_lst;
       {
-        vector<int> random_old_page_idx_lst;
+        vector<uint32_t> random_old_page_idx_lst;
         for (int i = 0; i < initial_page_unique_count; i++){
           random_old_page_idx_lst.push_back(i);
         }
         
         random_shuffle(random_old_page_idx_lst.begin(), random_old_page_idx_lst.end());
         
-        for (int i = 0; i < benchmark_insert_pg_num; i++){
+        for (int i = 0; i < n_page; i++){
           if (i < new_page_unique_count){
-            benchmark_insert_page_idx_lst.push_back(i + initial_page_unique_count);
+            benchmark_page_idx_lst.push_back(i + initial_page_unique_count);
           } else {
             // random one from old
-            benchmark_insert_page_idx_lst.push_back(random_old_page_idx_lst[i - new_page_unique_count]);
+            benchmark_page_idx_lst.push_back(random_old_page_idx_lst[i - new_page_unique_count]);
           }
         }
       }
-      random_shuffle(benchmark_insert_page_idx_lst.begin(), benchmark_insert_page_idx_lst.end());
+      random_shuffle(benchmark_page_idx_lst.begin(), benchmark_page_idx_lst.end());
 
-      void* initPtr = benchInsertReqMem;
-      for (int instrIdx = 0; instrIdx < dedupSys::instr_per_page * benchmark_insert_instr_pg_num; instrIdx ++){
-        if (instrIdx < write_op_num){
-          // set instr: write instr
-          initPtr = set_write_instr(initPtr, 100000 + instrIdx * benchmark_insert_page_per_instr, benchmark_insert_page_per_instr, false);
-
-          // set pages
-          char* initPtrChar = (char*) initPtr;
-          for (int pgIdx = 0; pgIdx < benchmark_insert_page_per_instr; pgIdx ++){
-            int randPgIdx = benchmark_insert_page_idx_lst[instrIdx * benchmark_insert_page_per_instr + pgIdx];
-            memcpy(initPtrChar + pgIdx * dedupSys::pg_size, all_unique_page_buffer + randPgIdx * dedupSys::pg_size, dedupSys::pg_size);
-            // memcpy(initPtrChar + pgIdx * pg_size, uniquePageBuffer + pgIdx * pg_size, pg_size);
-          }
-          initPtrChar = initPtrChar + benchmark_insert_page_per_instr * dedupSys::pg_size;
-          initPtr = (void*) initPtrChar;
-        } else {
-          // set Insrt: nop
-          initPtr = set_nop(initPtr);
-        }
-      }
-
-      // golden res
-      int* benchInsertGoldenPgIsExec = (int*) malloc(benchmark_insert_pg_num * sizeof(int));
-      int* benchInsertGoldenPgRefCount = (int*) malloc(benchmark_insert_pg_num * sizeof(int));
-      int* benchInsertGoldenPgIdx = (int*) malloc(benchmark_insert_pg_num * sizeof(int));
-
-      for (int pgIdx = 0; pgIdx < benchmark_insert_pg_num; pgIdx ++){
-        if (benchmark_insert_page_idx_lst[pgIdx] < initial_page_unique_count){
-          // old page
-          benchInsertGoldenPgIsExec[pgIdx] = 0;
-          benchInsertGoldenPgRefCount[pgIdx] = 2;
-          benchInsertGoldenPgIdx[pgIdx] = 100000 + pgIdx;
-        } else {
-          // new page
-          benchInsertGoldenPgIsExec[pgIdx] = 1;
-          benchInsertGoldenPgRefCount[pgIdx] = 1;
-          benchInsertGoldenPgIdx[pgIdx] = 100000 + pgIdx;
-        }
-      }
-
-      dedupSys::setReqStream(&cproc, benchInsertReqMem, benchmark_insert_pg_num + benchmark_insert_instr_pg_num, benchInsertRspMem);
-      sync_on && dedup_sys.syncBarrier();
-      auto begin_time = std::chrono::high_resolution_clock::now();
-      dedupSys::setStart(&cproc);
-      dedupSys::waitExecDone(&cproc, benchmark_insert_pg_num);
-      auto end_time = std::chrono::high_resolution_clock::now();
-
-      double time = std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - begin_time).count();
+      std::stringstream outfile_name;
+      outfile_name << output_dir << "/resp_" << timeStamp.str() << "_step3_1.txt";
+      double time;
+      verbose && (std::cout << endl << "starting run " << bench_idx + 1 << "/" << n_bench_run << endl);
+      modPages(ctx, Instr::WRITE, write_op_num, 100, benchmark_page_idx_lst, outfile_name, time);
       times_lst.push_back(time);
 
-      dedupSys::getExecDone(&cproc, benchmark_insert_pg_num + benchmark_insert_instr_pg_num, benchmark_insert_pg_num);
-      if (verbose){ std::cout << "time used: " << time << "ns" << std::endl; }
-
-      ofstream outfile3_1;
-      if (verbose){
-        std::stringstream outfile_name3_1;
-        outfile_name3_1 << output_dir << "/resp_" << timeStamp.str() << "_step3_1.txt";
-        outfile3_1.open(outfile_name3_1.str(), ios::out);
-      }
-
-      verbose && (cout << "parsing the results" << endl);
-      allPassed = parse_response(benchmark_insert_pg_num, benchInsertRspMem, benchInsertGoldenPgIsExec, benchInsertGoldenPgRefCount, benchInsertGoldenPgIdx, 1, outfile3_1);
-      cout << "all page passed?: " << (allPassed ? "True" : "False") << endl;
-      if(verbose){
-        outfile3_1.close();
-      }
-
-      free(benchInsertGoldenPgIsExec);
-      free(benchInsertGoldenPgRefCount);
-      free(benchInsertGoldenPgIdx);
-      cproc.freeMem(benchInsertReqMem);
-      cproc.freeMem(benchInsertRspMem);
-
-      uint32_t benchmark_num_page_to_clean = benchmark_insert_pg_num;
-      uint32_t benchmark_clean_instr_pg_num = (benchmark_num_page_to_clean * dedupSys::instr_size + dedupSys::pg_size - 1) / dedupSys::pg_size; // data transfer is done in pages
-      uint32_t n_hugepage_bench_clean_req = (benchmark_clean_instr_pg_num * dedupSys::pg_size + dedupSys::huge_pg_size -1) / dedupSys::huge_pg_size;
-      uint32_t n_hugepage_bench_clean_rsp = (benchmark_num_page_to_clean * 64 + dedupSys::huge_pg_size-1) / dedupSys::huge_pg_size;
-      void* benchCleanReqMem = cproc.getMem({CoyoteAlloc::HOST_2M, n_hugepage_bench_clean_req});
-      void* benchCleanRspMem = cproc.getMem({CoyoteAlloc::HOST_2M, n_hugepage_bench_clean_rsp});
-
-      initPtr = benchCleanReqMem;
-      for (int instrIdx = 0; instrIdx < benchmark_clean_instr_pg_num * dedupSys::instr_per_page; instrIdx ++){
-        if (instrIdx < benchmark_num_page_to_clean){
-          // set instr: erase instr
-          int pgIdx = benchmark_insert_page_idx_lst[instrIdx];
-          initPtr = set_erase_instr(initPtr, all_unique_page_sha3 + pgIdx * 8, false);
-        } else {
-          // set Insrt: nop
-          initPtr = set_nop(initPtr);
-        }
-      }
-
-      // golden res
-      int* benchCleanGoldenPgIsExec = (int*) malloc(benchmark_num_page_to_clean * sizeof(int));
-      int* benchCleanGoldenPgRefCount = (int*) malloc(benchmark_num_page_to_clean * sizeof(int));
-      int* benchCleanGoldenPgIdx = (int*) malloc(benchmark_num_page_to_clean * sizeof(int));
-
-      for (int pgIdx = 0; pgIdx < benchmark_num_page_to_clean; pgIdx ++){
-        if (benchmark_insert_page_idx_lst[pgIdx] < initial_page_unique_count){
-          // old page
-          benchCleanGoldenPgIsExec[pgIdx] = 0;
-          benchCleanGoldenPgRefCount[pgIdx] = 1;
-          benchCleanGoldenPgIdx[pgIdx] = 0;
-        } else {
-          // new page, GC
-          benchCleanGoldenPgIsExec[pgIdx] = 1;
-          benchCleanGoldenPgRefCount[pgIdx] = 0;
-          benchCleanGoldenPgIdx[pgIdx] = 0;
-        }
-      }
-
-      dedupSys::setReqStream(&cproc, benchCleanReqMem, benchmark_clean_instr_pg_num, benchCleanRspMem);
-      sync_on && dedup_sys.syncBarrier();
-      dedupSys::setStart(&cproc);
-      sleep(1);
-      dedupSys::getExecDone(&cproc, benchmark_clean_instr_pg_num, benchmark_num_page_to_clean);
-
-      ofstream outfile3_2;
-      if(verbose){
-        std::stringstream outfile_name3_2;
-        outfile_name3_2 << output_dir << "/resp_" << timeStamp.str() << "_step3_2.txt";
-        outfile3_2.open(outfile_name3_2.str(), ios::out);
-      }
-
-      verbose && (cout << "parsing the results" << endl);
-      allPassed = parse_response(benchmark_num_page_to_clean, benchCleanRspMem, benchCleanGoldenPgIsExec, benchCleanGoldenPgRefCount, benchCleanGoldenPgIdx, 2, outfile3_2);
-      cout << "all page passed?: " << (allPassed ? "True" : "False") << endl;
-      if (verbose){
-        outfile3_2.close();
-      }
-
-      free(benchCleanGoldenPgIsExec);
-      free(benchCleanGoldenPgRefCount);
-      free(benchCleanGoldenPgIdx);
-      cproc.freeMem(benchCleanReqMem);
-      cproc.freeMem(benchCleanRspMem);
+      std::stringstream outfile_name;
+      outfile_name << output_dir << "/resp_" << timeStamp.str() << "_step3_2.txt";
+      modPages(ctx, Instr::ERASE, n_page, 0, benchmark_page_idx_lst, outfile_name, time);
     }
 
-    cout << endl << "benchmarking done, avg time used: " << vctr_avg(times_lst) << " ns" << endl;
+    std::cout << endl << "benchmarking done, avg time used: " << vctr_avg(times_lst) << " ns" << endl;
 
-    cout << endl << "Step4: clean up all remaining pages" << endl;
-    if (initial_page_unique_count >= 0){
-      uint32_t final_num_page_to_clean = initial_page_unique_count;
-      uint32_t final_clean_instr_pg_num = (final_num_page_to_clean * dedupSys::instr_size + dedupSys::pg_size - 1) / dedupSys::pg_size; // data transfer is done in pages
-      uint32_t n_hugepage_final_clean_req = (final_clean_instr_pg_num * dedupSys::pg_size + dedupSys::huge_pg_size -1) / dedupSys::huge_pg_size;
-      uint32_t n_hugepage_final_clean_rsp = (final_num_page_to_clean * 64 + dedupSys::huge_pg_size - 1) / dedupSys::huge_pg_size;
-      void* finalCleanReqMem = cproc.getMem({CoyoteAlloc::HOST_2M, n_hugepage_final_clean_req});
-      void* finalCleanRspMem = cproc.getMem({CoyoteAlloc::HOST_2M, n_hugepage_final_clean_rsp});
-
-      void* initPtr = finalCleanReqMem;
-      for (int instrIdx = 0; instrIdx < final_clean_instr_pg_num * dedupSys::instr_per_page; instrIdx ++){
-        if (instrIdx < final_num_page_to_clean){
-          // set instr: erase instr
-          int pgIdx = instrIdx;
-          initPtr = set_erase_instr(initPtr, all_unique_page_sha3 + pgIdx * 8, false);
-        } else {
-          // set Insrt: nop
-          initPtr = set_nop(initPtr);
-        }
-      }
-
-      // golden res
-      int* finalCleanGoldenPgIsExec = (int*) malloc(final_num_page_to_clean * sizeof(int));
-      int* finalCleanGoldenPgRefCount = (int*) malloc(final_num_page_to_clean * sizeof(int));
-      int* finalCleanGoldenPgIdx = (int*) malloc(final_num_page_to_clean * sizeof(int));
-
-      for (int pgIdx = 0; pgIdx < final_num_page_to_clean; pgIdx ++){
-        finalCleanGoldenPgIsExec[pgIdx] = 1;
-        finalCleanGoldenPgRefCount[pgIdx] = 0;
-        finalCleanGoldenPgIdx[pgIdx] = 0;
-      }
-
-      dedupSys::setReqStream(&cproc, finalCleanReqMem, final_clean_instr_pg_num, finalCleanRspMem);
-      sync_on && dedup_sys.syncBarrier();
-      dedupSys::setStart(&cproc);
-      sleep(1);
-      dedupSys::getExecDone(&cproc, final_clean_instr_pg_num, final_num_page_to_clean);
-
-      ofstream outfile4;
-      if(verbose){
-        std::stringstream outfile_name4;
-        outfile_name4 << output_dir << "/resp_" << timeStamp.str() << "_step4.txt";
-        outfile4.open(outfile_name4.str(), ios::out);
-      }
-
-      verbose && (cout << "parsing the results" << endl);
-      allPassed = parse_response(final_num_page_to_clean, finalCleanRspMem, finalCleanGoldenPgIsExec, finalCleanGoldenPgRefCount, finalCleanGoldenPgIdx, 2, outfile4);
-      cout << "all page passed?: " << (allPassed ? "True" : "False") << endl;
-      if (verbose){
-        outfile4.close();
-      }
-      free(finalCleanGoldenPgIsExec);
-      free(finalCleanGoldenPgRefCount);
-      free(finalCleanGoldenPgIdx);
-      cproc.freeMem(finalCleanReqMem);
-      cproc.freeMem(finalCleanRspMem);
+    std::cout << endl << "Step4: clean up all remaining pages" << endl;
+    if (initial_page_unique_count >= 0) {
+      std::stringstream outfile_name;
+      outfile_name << output_dir << "/resp_" << timeStamp.str() << "_step4.txt";
+      double time;
+      modPages(ctx, Instr::ERASE, initial_page_unique_count, 0, 0, initial_page_unique_count, outfile_name, time);
     }
 
     cproc.clearCompleted();
     free(all_unique_page_buffer);
     free(all_unique_page_sha3);
+    free(goldenPgIsExec);
+    free(goldenPgRefCount);
+    free(goldenPgIdx);
   }
 
   return EXIT_SUCCESS;
