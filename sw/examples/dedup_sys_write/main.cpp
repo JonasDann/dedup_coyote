@@ -166,7 +166,7 @@ bool modPages(Context &ctx, Instr instr, uint32_t instr_count, uint32_t lba_offs
   for (size_t i = 0; i < pg_count; i++) {
     pg_idx_lst.push_back(pg_idx_start + i);
   }
-  modPages(ctx, instr, instr_count, lba_offset + pg_idx_start, pg_idx_lst, outfile_name, time);
+  return modPages(ctx, instr, instr_count, lba_offset + pg_idx_start, pg_idx_lst, outfile_name, time);
 }
 
 /**
@@ -350,7 +350,7 @@ int main(int argc, char *argv[])
       modPages(ctx, Instr::WRITE, write_op_num, 100, benchmark_page_idx_lst, outfile_name, time);
       times_lst.push_back(time);
 
-      std::stringstream outfile_name;
+      outfile_name = std::stringstream();
       outfile_name << output_dir << "/resp_" << timeStamp.str() << "_step3_2.txt";
       modPages(ctx, Instr::ERASE, n_page, 0, benchmark_page_idx_lst, outfile_name, time);
     }
