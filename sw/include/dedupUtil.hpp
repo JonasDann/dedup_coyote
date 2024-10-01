@@ -55,6 +55,6 @@ void * set_nop(void * startPtr);
 void * set_write_instr(void * startPtr, int startLBA, int LBALen, bool printEn);
 void * set_erase_instr(void * startPtr, uint32_t * sha3Val, bool printEn);
 void * set_read_instr(void * startPtr, uint32_t * sha3Val, bool printEn);
-bool parse_response(uint32_t pageCount, void* rspMem, int* goldenPgIsExec, int* goldenPgRefCount, int* goldenPgIdx, int goldenOpCode, ofstream& outfile);
+bool parse_response(vector<uint32_t> &pg_idx_lst, void* rspMem, int* goldenPgIsExec, int* goldenPgRefCount, int* goldenPgIdx, int goldenOpCode, ofstream& outfile);
 
 } // namespace dedup

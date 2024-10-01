@@ -34,9 +34,15 @@ using namespace dedup;
 /* Def params */
 constexpr auto const TARGET_REGION = 0;
 
-enum Instr {
+enum OpCode {
   WRITE,
   ERASE
+};
+
+struct Instr {
+  OpCode opcode;
+  uint32_t lba;
+  vector<uint32_t> &pg_idx_lst;
 };
 
 struct Context {
@@ -63,27 +69,28 @@ uint32_t ceilPage(uint32_t byteCount) {
   return (byteCount + dedupSys::pg_size - 1) / dedupSys::pg_size;
 }
 
-uint32_t ceilHugePage(uint32_t pageCount) {
-  return (pageCount + dedupSys::huge_pg_size - 1) / dedupSys::huge_pg_size;
+uint32_t ceilHugePage(uint32_t byteCount) {
+  return (byteCount + dedupSys::huge_pg_size - 1) / dedupSys::huge_pg_size;
 }
 
-void updateGolden(Context &ctx, Instr &instr, uint32_t pgIdx, uint32_t lba) {
-  ctx.goldenPgIsExec[pgIdx] = (ctx.goldenPgRefCount[pgIdx] > 0) ? 0 : 1;
+void updateGolden(Context &ctx, OpCode &instr, uint32_t pgIdx, uint32_t lba) {
   if (instr == WRITE) {
+    ctx.goldenPgIsExec[pgIdx] = (ctx.goldenPgRefCount[pgIdx] > 0) ? 0 : 1;
     ctx.goldenPgRefCount[pgIdx] += 1;
     ctx.goldenPgIdx[pgIdx] = lba;
   } else {
     assert(ctx.goldenPgRefCount > 0);
+    ctx.goldenPgIsExec[pgIdx] = (ctx.goldenPgRefCount[pgIdx] > 1) ? 0 : 1;
     ctx.goldenPgRefCount[pgIdx] -= 1;
     ctx.goldenPgIdx[pgIdx] = 0;
   }
 }
 
-bool modPages(Context &ctx, Instr instr, uint32_t instr_count, uint32_t lba_offset, vector<uint32_t> &pg_idx_lst, stringstream &outfile_name, double &time) {
+bool modPages(Context &ctx, OpCode instr, uint32_t instr_count, uint32_t lba_offset, vector<uint32_t> &pg_idx_lst, stringstream &outfile_name, double &time) {
   uint32_t pg_count = pg_idx_lst.size();
   uint32_t data_pg_count = (instr == WRITE) ? pg_count : 0; // How much page data actually has to be communicated
   uint32_t instr_pg_num = ceilPage(instr_count * dedupSys::instr_size); // 1 op
-  uint32_t n_hugepage_req = ceilHugePage(data_pg_count + instr_pg_num); // roundup, number of hugepage for n page
+  uint32_t n_hugepage_req = ceilHugePage((data_pg_count + instr_pg_num) * dedupSys::pg_size); // roundup, number of hugepage for n page
   uint32_t n_hugepage_rsp = ceilHugePage(pg_count * 64); // roundup, number of huge page for 64B response from each page
 
   void* reqMem = ctx.cproc.getMem({CoyoteAlloc::HOST_2M, n_hugepage_req});
@@ -140,7 +147,7 @@ bool modPages(Context &ctx, Instr instr, uint32_t instr_count, uint32_t lba_offs
   }
 
   ctx.verbose && (std::cout << "parsing the results" << endl);
-  bool check_res = parse_response(pg_count, rspMem, ctx.goldenPgIsExec, ctx.goldenPgRefCount, ctx.goldenPgIdx, (instr == WRITE) ? 1 : 2, outfile);
+  bool check_res = parse_response(pg_idx_lst, rspMem, ctx.goldenPgIsExec, ctx.goldenPgRefCount, ctx.goldenPgIdx, (instr == WRITE) ? 1 : 2, outfile);
 
   if (instr == WRITE) { // Copy SHA3 hashes from response to buffer
     uint32_t* rspMemUInt32 = (uint32_t*) rspMem;
@@ -161,7 +168,7 @@ bool modPages(Context &ctx, Instr instr, uint32_t instr_count, uint32_t lba_offs
   return check_res;
 }
 
-bool modPages(Context &ctx, Instr instr, uint32_t instr_count, uint32_t lba_offset, uint32_t pg_idx_start, uint32_t pg_count, stringstream &outfile_name, double &time) {
+bool modPages(Context &ctx, OpCode instr, uint32_t instr_count, uint32_t lba_offset, uint32_t pg_idx_start, uint32_t pg_count, stringstream &outfile_name, double &time) {
   vector<uint32_t> pg_idx_lst;
   for (size_t i = 0; i < pg_count; i++) {
     pg_idx_lst.push_back(pg_idx_start + i);
@@ -303,10 +310,10 @@ int main(int argc, char *argv[])
       uint32_t pg_idx_count = pg_idx_end - pg_idx_start;
       stringstream outfile_name;
       outfile_name << output_dir << "/resp_" << timeStamp.str() << "_step1.txt";
-      std::cout << "round " << insertion_round_idx;
+      std::cout << "round " << insertion_round_idx << endl;
 
       double time;
-      modPages(ctx, Instr::WRITE, 1, 100, pg_idx_start, pg_idx_count, outfile_name, time);
+      modPages(ctx, OpCode::WRITE, 1, 100, pg_idx_start, pg_idx_count, outfile_name, time);
     }
 
     std::cout << endl << "Step2: clean new pages" << endl;
@@ -315,7 +322,7 @@ int main(int argc, char *argv[])
       outfile_name << output_dir << "/resp_"<< timeStamp.str() << "_step2.txt";
 
       double time;
-      modPages(ctx, Instr::ERASE, new_page_unique_count, 0, initial_page_unique_count, new_page_unique_count, outfile_name, time);
+      modPages(ctx, OpCode::ERASE, new_page_unique_count, 0, initial_page_unique_count, new_page_unique_count, outfile_name, time);
     }
 
     std::cout << endl << "Step3: start benchmarking, insertion only" << endl;
@@ -347,12 +354,12 @@ int main(int argc, char *argv[])
       outfile_name << output_dir << "/resp_" << timeStamp.str() << "_step3_1.txt";
       double time;
       verbose && (std::cout << endl << "starting run " << bench_idx + 1 << "/" << n_bench_run << endl);
-      modPages(ctx, Instr::WRITE, write_op_num, 100, benchmark_page_idx_lst, outfile_name, time);
+      modPages(ctx, OpCode::WRITE, write_op_num, 100, benchmark_page_idx_lst, outfile_name, time);
       times_lst.push_back(time);
 
       outfile_name = std::stringstream();
       outfile_name << output_dir << "/resp_" << timeStamp.str() << "_step3_2.txt";
-      modPages(ctx, Instr::ERASE, n_page, 0, benchmark_page_idx_lst, outfile_name, time);
+      modPages(ctx, OpCode::ERASE, n_page, 0, benchmark_page_idx_lst, outfile_name, time);
     }
 
     std::cout << endl << "benchmarking done, avg time used: " << vctr_avg(times_lst) << " ns" << endl;
@@ -362,7 +369,7 @@ int main(int argc, char *argv[])
       std::stringstream outfile_name;
       outfile_name << output_dir << "/resp_" << timeStamp.str() << "_step4.txt";
       double time;
-      modPages(ctx, Instr::ERASE, initial_page_unique_count, 0, 0, initial_page_unique_count, outfile_name, time);
+      modPages(ctx, OpCode::ERASE, initial_page_unique_count, 0, 0, initial_page_unique_count, outfile_name, time);
     }
 
     cproc.clearCompleted();

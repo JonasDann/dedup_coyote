@@ -308,10 +308,10 @@ void * set_read_instr(void * startPtr, uint32_t * sha3Val, bool printEn = false)
     return (void *) (startPtrUInt32 + 16);
 }
 
-bool parse_response(uint32_t pageCount, void* rspMem, int* goldenPgIsExec, int* goldenPgRefCount, int* goldenPgIdx, int goldenOpCode, ofstream& outfile){
+bool parse_response(vector<uint32_t> &pg_idx_lst, void* rspMem, int* goldenPgIsExec, int* goldenPgRefCount, int* goldenPgIdx, int goldenOpCode, ofstream& outfile) {
   bool allPassed = true;
   uint32_t* rspMemUInt32 = (uint32_t*) rspMem;
-  for (int i=0; i < pageCount; i++) {
+  for (int i = 0; i < pg_idx_lst.size(); i++) {
     uint32_t refCount     = rspMemUInt32[i*16 + 8];
     uint32_t SSDLBA       = rspMemUInt32[i*16 + 9];
     uint32_t nodeIdx      = rspMemUInt32[i*16 + 10];
@@ -327,11 +327,11 @@ bool parse_response(uint32_t pageCount, void* rspMem, int* goldenPgIsExec, int* 
     // }
     uint32_t goldenDataNodeIdx = (goldenOpCode == 1) ? 77 : 0;
     bool pagePassed = true;
-    pagePassed = pagePassed && (refCount == goldenPgRefCount[i]);
-    pagePassed = pagePassed && (hostLBAStart == goldenPgIdx[i]);
+    pagePassed = pagePassed && (refCount == goldenPgRefCount[pg_idx_lst[i]]);
+    pagePassed = pagePassed && (hostLBAStart == goldenPgIdx[pg_idx_lst[i]]);
     pagePassed = pagePassed && (hostLBALen == 1);
     pagePassed = pagePassed && (dataNodeIdx == goldenDataNodeIdx);
-    pagePassed = pagePassed && (isExec == goldenPgIsExec[i]);
+    pagePassed = pagePassed && (isExec == goldenPgIsExec[pg_idx_lst[i]]);
     pagePassed = pagePassed && (opCode == goldenOpCode);
 
     allPassed = allPassed && pagePassed;
@@ -344,11 +344,11 @@ bool parse_response(uint32_t pageCount, void* rspMem, int* goldenPgIsExec, int* 
     // write to file
     outfile << "page: " << i << ", at SSD LBA: " << SSDLBA << endl;
     outfile << "overall checking:" << pagePassed << endl;
-    outfile << "refCount     " << refCount     << "\texpected " << goldenPgRefCount[i] << std::endl;
-    outfile << "hostLBAStart " << hostLBAStart << "\texpected " << goldenPgIdx[i]      << std::endl;
-    outfile << "hostLBALen   " << hostLBALen   << "\texpected " << 1                   << std::endl;
-    outfile << "isExec       " << isExec       << "\texpected " << goldenPgIsExec[i]   << std::endl;
-    outfile << "opCode       " << opCode       << "\texpected " << goldenOpCode        << std::endl;
+    outfile << "refCount     " << refCount     << "\texpected " << goldenPgRefCount[pg_idx_lst[i]] << std::endl;
+    outfile << "hostLBAStart " << hostLBAStart << "\texpected " << goldenPgIdx[pg_idx_lst[i]]      << std::endl;
+    outfile << "hostLBALen   " << hostLBALen   << "\texpected " << 1                               << std::endl;
+    outfile << "isExec       " << isExec       << "\texpected " << goldenPgIsExec[pg_idx_lst[i]]   << std::endl;
+    outfile << "opCode       " << opCode       << "\texpected " << goldenOpCode                    << std::endl;
     outfile << "SHA3         " << SHA3sstream.str() << endl;
     outfile << endl;
   }
