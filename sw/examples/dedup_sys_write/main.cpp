@@ -34,17 +34,6 @@ using namespace dedup;
 /* Def params */
 constexpr auto const TARGET_REGION = 0;
 
-enum OpCode {
-  WRITE,
-  ERASE
-};
-
-struct Instr {
-  OpCode opcode;
-  uint32_t lba;
-  vector<uint32_t> &pg_idx_lst;
-};
-
 struct Context {
   dedupSys &dedup_sys;
   cProcess &cproc;
@@ -86,9 +75,15 @@ void updateGolden(Context &ctx, OpCode &instr, uint32_t pgIdx, uint32_t lba) {
   }
 }
 
-bool modPages(Context &ctx, OpCode instr, uint32_t instr_count, uint32_t lba_offset, vector<uint32_t> &pg_idx_lst, stringstream &outfile_name, double &time) {
-  uint32_t pg_count = pg_idx_lst.size();
-  uint32_t data_pg_count = (instr == WRITE) ? pg_count : 0; // How much page data actually has to be communicated
+bool modPages(Context &ctx, vector<Instr> &instrs, stringstream &outfile_name, double &time, bool init_sha3 = false) {
+  uint32_t pg_count = 0;
+  uint32_t data_pg_count = 0; // How much page data actually has to be communicated
+  for (auto &instr : instrs) {
+    auto instr_len = instr.pg_idx_lst.size();
+    pg_count += instr_len;
+    data_pg_count += (instr.opcode == WRITE) ? instr_len : 0;
+  }
+  uint32_t instr_count = instrs.size();
   uint32_t instr_pg_num = ceilPage(instr_count * dedupSys::instr_size); // 1 op
   uint32_t n_hugepage_req = ceilHugePage((data_pg_count + instr_pg_num) * dedupSys::pg_size); // roundup, number of hugepage for n page
   uint32_t n_hugepage_rsp = ceilHugePage(pg_count * 64); // roundup, number of huge page for 64B response from each page
@@ -97,33 +92,28 @@ bool modPages(Context &ctx, OpCode instr, uint32_t instr_count, uint32_t lba_off
   void* rspMem = ctx.cproc.getMem({CoyoteAlloc::HOST_2M, n_hugepage_rsp});
 
   void* initPtr = reqMem;
-  for (int instrIdx = 0; instrIdx < dedupSys::instr_per_page * instr_pg_num; instrIdx ++) {
-    if (instrIdx < instr_count) {
-      if (instr == WRITE) {
-        uint32_t insert_page_per_instr = pg_count / instr_count;
-        uint32_t curr_pg_start = instrIdx * insert_page_per_instr;
-        // set instr: write instr
-        initPtr = set_write_instr(initPtr, lba_offset + curr_pg_start, insert_page_per_instr, false);
+  for (auto &instr : instrs) {
+    if (instr.opcode == WRITE) {
+      // set instr: write instr
+      initPtr = set_write_instr(initPtr, instr.lba, instr.pg_idx_lst.size(), false);
 
-        // set pages
-        char* initPtrChar = (char*) initPtr;
-        for (int i = 0; i < insert_page_per_instr; i ++) {
-          int pgIdx = pg_idx_lst[instrIdx * insert_page_per_instr + i];
-          memcpy(initPtrChar + i * dedupSys::pg_size, ctx.all_unique_page_buffer + pgIdx * dedupSys::pg_size, dedupSys::pg_size); // copy pages to request buffer
-        }
-        initPtrChar = initPtrChar + insert_page_per_instr * dedupSys::pg_size;
-        initPtr = (void*) initPtrChar;
-      } else {
-        initPtr = set_erase_instr(initPtr, ctx.all_unique_page_sha3 + pg_idx_lst[instrIdx] * 8, false);
+      // set pages
+      char* initPtrChar = (char*) initPtr;
+      for (int i = 0; i < instr.pg_idx_lst.size(); i ++) {
+        int pgIdx = instr.pg_idx_lst[i];
+        memcpy(initPtrChar + i * dedupSys::pg_size, ctx.all_unique_page_buffer + pgIdx * dedupSys::pg_size, dedupSys::pg_size); // copy pages to request buffer
+        updateGolden(ctx, instr.opcode, pgIdx, instr.lba + i);
+        initPtrChar += dedupSys::pg_size;
       }
+      initPtr = (void*) initPtrChar;
     } else {
-      // set Insrt: nop
-      initPtr = set_nop(initPtr); // pad with nops to make page full. Otherwise, uninitialized random data could trigger instructions
+      assert(instr.pg_idx_lst.size() == 1);
+      initPtr = set_erase_instr(initPtr, ctx.all_unique_page_sha3 + instr.pg_idx_lst[0] * 8, false);
+      updateGolden(ctx, instr.opcode, instr.pg_idx_lst[0], instr.lba);
     }
   }
-
-  for (int i = 0; i < pg_count; i ++){
-    updateGolden(ctx, instr, pg_idx_lst[i], lba_offset + i);
+  for (int nopIdx = 0; nopIdx < dedupSys::instr_per_page - (instrs.size() % dedupSys::instr_per_page); nopIdx++) {
+    initPtr = set_nop(initPtr); // pad with nops to make page full. Otherwise, uninitialized random data could trigger instructions
   }
   
   ctx.verbose && (std::cout << "start execution" << endl);
@@ -147,13 +137,13 @@ bool modPages(Context &ctx, OpCode instr, uint32_t instr_count, uint32_t lba_off
   }
 
   ctx.verbose && (std::cout << "parsing the results" << endl);
-  bool check_res = parse_response(pg_idx_lst, rspMem, ctx.goldenPgIsExec, ctx.goldenPgRefCount, ctx.goldenPgIdx, (instr == WRITE) ? 1 : 2, outfile);
+  bool check_res = parse_response(instrs, rspMem, ctx.goldenPgIsExec, ctx.goldenPgRefCount, ctx.goldenPgIdx, outfile);
 
-  if (instr == WRITE) { // Copy SHA3 hashes from response to buffer
+  if (init_sha3) { // Copy SHA3 hashes from response to buffer
     uint32_t* rspMemUInt32 = (uint32_t*) rspMem;
     ctx.verbose && (std::cout << "get all SHA3" << endl);
     for (int i=0; i < pg_count; i++) {
-      memcpy(ctx.all_unique_page_sha3 + pg_idx_lst[i] * 8, (void*) (rspMemUInt32 + i * 16), 32);
+      memcpy(ctx.all_unique_page_sha3 + instrs[0].pg_idx_lst[i] * 8, (void*) (rspMemUInt32 + i * 16), 32); // This only works if there is only one write instruction for the init call
     }
   }
 
@@ -168,12 +158,25 @@ bool modPages(Context &ctx, OpCode instr, uint32_t instr_count, uint32_t lba_off
   return check_res;
 }
 
-bool modPages(Context &ctx, OpCode instr, uint32_t instr_count, uint32_t lba_offset, uint32_t pg_idx_start, uint32_t pg_count, stringstream &outfile_name, double &time) {
+bool modPages(Context &ctx, OpCode opcode, uint32_t instr_count, uint32_t lba_offset, vector<uint32_t> &pg_idx_lst, stringstream &outfile_name, double &time, bool init_sha3 = false) {
+  assert(pg_idx_lst.size() % instr_count == 0);
+  uint32_t instr_pg_count = pg_idx_lst.size() / instr_count;
+  vector<Instr> instrs(instr_count);
+  for (size_t i = 0; i < instr_count; i++) {
+    auto start = instr_count * i;
+    instrs[i].opcode = opcode;
+    instrs[i].lba = lba_offset + start;
+    copy(pg_idx_lst.begin() + start, pg_idx_lst.begin() + start + instr_pg_count, instrs[i].pg_idx_lst.begin());
+  }
+  return modPages(ctx, instrs, outfile_name, time, init_sha3);
+}
+
+bool modPages(Context &ctx, OpCode instr, uint32_t instr_count, uint32_t lba_offset, uint32_t pg_idx_start, uint32_t pg_count, stringstream &outfile_name, double &time, bool init_sha3 = false) {
   vector<uint32_t> pg_idx_lst;
   for (size_t i = 0; i < pg_count; i++) {
     pg_idx_lst.push_back(pg_idx_start + i);
   }
-  return modPages(ctx, instr, instr_count, lba_offset + pg_idx_start, pg_idx_lst, outfile_name, time);
+  return modPages(ctx, instr, instr_count, lba_offset + pg_idx_start, pg_idx_lst, outfile_name, time, init_sha3);
 }
 
 /**
@@ -313,7 +316,7 @@ int main(int argc, char *argv[])
       std::cout << "round " << insertion_round_idx << endl;
 
       double time;
-      modPages(ctx, OpCode::WRITE, 1, 100, pg_idx_start, pg_idx_count, outfile_name, time);
+      modPages(ctx, OpCode::WRITE, 1, 100, pg_idx_start, pg_idx_count, outfile_name, time, true); // This only works if there is only one write instruction for the init call
     }
 
     std::cout << endl << "Step2: clean new pages" << endl;

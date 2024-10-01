@@ -308,49 +308,56 @@ void * set_read_instr(void * startPtr, uint32_t * sha3Val, bool printEn = false)
     return (void *) (startPtrUInt32 + 16);
 }
 
-bool parse_response(vector<uint32_t> &pg_idx_lst, void* rspMem, int* goldenPgIsExec, int* goldenPgRefCount, int* goldenPgIdx, int goldenOpCode, ofstream& outfile) {
+bool parse_response(vector<Instr> &instrs, void* rspMem, int* goldenPgIsExec, int* goldenPgRefCount, int* goldenPgIdx, ofstream& outfile) {
   bool allPassed = true;
   uint32_t* rspMemUInt32 = (uint32_t*) rspMem;
-  for (int i = 0; i < pg_idx_lst.size(); i++) {
-    uint32_t refCount     = rspMemUInt32[i*16 + 8];
-    uint32_t SSDLBA       = rspMemUInt32[i*16 + 9];
-    uint32_t nodeIdx      = rspMemUInt32[i*16 + 10];
-    uint32_t hostLBAStart = rspMemUInt32[i*16 + 11];
-    uint32_t hostLBALen   = rspMemUInt32[i*16 + 12];
-    uint32_t dataNodeIdx  = rspMemUInt32[i*16 + 13];
-    uint32_t execStatus   = rspMemUInt32[i*16 + 15];
-    bool isExec = (execStatus & (1 << 29)) ? true : false; // 1 -> op exec -> new page -> not exist(or GC)
-    uint32_t opCode = (execStatus>>30);
+  uint32_t i = 0;
+  for (auto &instr : instrs) {
+    for (auto pg_idx : instr.pg_idx_lst) {
+      uint32_t refCount     = rspMemUInt32[8];
+      uint32_t SSDLBA       = rspMemUInt32[9];
+      uint32_t nodeIdx      = rspMemUInt32[10];
+      uint32_t hostLBAStart = rspMemUInt32[11];
+      uint32_t hostLBALen   = rspMemUInt32[12];
+      uint32_t dataNodeIdx  = rspMemUInt32[13];
+      uint32_t execStatus   = rspMemUInt32[15];
+      bool isExec = (execStatus & (1 << 29)) ? true : false; // 1 -> op exec -> new page -> not exist(or GC)
+      uint32_t opCode = (execStatus>>30);
 
-    // if(nodeIdx != 7){
-    //   cout << "single board test should get same node index" << endl;
-    // }
-    uint32_t goldenDataNodeIdx = (goldenOpCode == 1) ? 77 : 0;
-    bool pagePassed = true;
-    pagePassed = pagePassed && (refCount == goldenPgRefCount[pg_idx_lst[i]]);
-    pagePassed = pagePassed && (hostLBAStart == goldenPgIdx[pg_idx_lst[i]]);
-    pagePassed = pagePassed && (hostLBALen == 1);
-    pagePassed = pagePassed && (dataNodeIdx == goldenDataNodeIdx);
-    pagePassed = pagePassed && (isExec == goldenPgIsExec[pg_idx_lst[i]]);
-    pagePassed = pagePassed && (opCode == goldenOpCode);
+      // if(nodeIdx != 7){
+      //   cout << "single board test should get same node index" << endl;
+      // }
+      uint32_t goldenOpCode = (instr.opcode == WRITE) ? 1 : 2;
+      uint32_t goldenDataNodeIdx = (instr.opcode == WRITE) ? 77 : 0;
+      bool pagePassed = true;
+      pagePassed = pagePassed && (refCount == goldenPgRefCount[pg_idx]);
+      pagePassed = pagePassed && (hostLBAStart == goldenPgIdx[pg_idx]);
+      pagePassed = pagePassed && (hostLBALen == 1);
+      pagePassed = pagePassed && (dataNodeIdx == goldenDataNodeIdx);
+      pagePassed = pagePassed && (isExec == goldenPgIsExec[pg_idx]);
+      pagePassed = pagePassed && (opCode == goldenOpCode);
 
-    allPassed = allPassed && pagePassed;
+      allPassed = allPassed && pagePassed;
 
-    std::stringstream SHA3sstream;
-    for (int sha3PieceIdx = 7; sha3PieceIdx >= 0; sha3PieceIdx --){
-      SHA3sstream << std::setfill ('0') << std::setw(sizeof(uint32_t)*2) << std::hex << rspMemUInt32[i*16 + sha3PieceIdx];
+      std::stringstream SHA3sstream;
+      for (int sha3PieceIdx = 7; sha3PieceIdx >= 0; sha3PieceIdx --){
+      SHA3sstream << std::setfill ('0') << std::setw(sizeof(uint32_t)*2) << std::hex << rspMemUInt32[sha3PieceIdx];
+      }
+
+      // write to file
+      outfile << "page: " << i << ", at SSD LBA: " << SSDLBA << endl;
+      outfile << "overall checking:" << pagePassed << endl;
+      outfile << "refCount     " << refCount     << "\texpected " << goldenPgRefCount[pg_idx] << std::endl;
+      outfile << "hostLBAStart " << hostLBAStart << "\texpected " << goldenPgIdx[pg_idx]      << std::endl;
+      outfile << "hostLBALen   " << hostLBALen   << "\texpected " << 1                        << std::endl;
+      outfile << "isExec       " << isExec       << "\texpected " << goldenPgIsExec[pg_idx]   << std::endl;
+      outfile << "opCode       " << opCode       << "\texpected " << goldenOpCode             << std::endl;
+      outfile << "SHA3         " << SHA3sstream.str() << endl;
+      outfile << endl;
+
+      rspMemUInt32 += 16;
+      i++;
     }
-
-    // write to file
-    outfile << "page: " << i << ", at SSD LBA: " << SSDLBA << endl;
-    outfile << "overall checking:" << pagePassed << endl;
-    outfile << "refCount     " << refCount     << "\texpected " << goldenPgRefCount[pg_idx_lst[i]] << std::endl;
-    outfile << "hostLBAStart " << hostLBAStart << "\texpected " << goldenPgIdx[pg_idx_lst[i]]      << std::endl;
-    outfile << "hostLBALen   " << hostLBALen   << "\texpected " << 1                               << std::endl;
-    outfile << "isExec       " << isExec       << "\texpected " << goldenPgIsExec[pg_idx_lst[i]]   << std::endl;
-    outfile << "opCode       " << opCode       << "\texpected " << goldenOpCode                    << std::endl;
-    outfile << "SHA3         " << SHA3sstream.str() << endl;
-    outfile << endl;
   }
   return allPassed;
 }
