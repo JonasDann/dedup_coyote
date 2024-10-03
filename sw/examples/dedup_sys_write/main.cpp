@@ -101,7 +101,7 @@ bool modPages(Context &ctx, vector<Instr> &instrs, stringstream &outfile_name, d
       char* initPtrChar = (char*) initPtr;
       for (int i = 0; i < instr.pg_idx_lst.size(); i ++) {
         int pgIdx = instr.pg_idx_lst[i];
-        memcpy(initPtrChar + i * dedupSys::pg_size, ctx.all_unique_page_buffer + pgIdx * dedupSys::pg_size, dedupSys::pg_size); // copy pages to request buffer
+        memcpy(initPtrChar, ctx.all_unique_page_buffer + pgIdx * dedupSys::pg_size, dedupSys::pg_size); // copy pages to request buffer
         updateGolden(ctx, instr.opcode, pgIdx, instr.lba + i);
         initPtrChar += dedupSys::pg_size;
       }
@@ -159,12 +159,12 @@ bool modPages(Context &ctx, vector<Instr> &instrs, stringstream &outfile_name, d
 }
 
 bool modPages(Context &ctx, OpCode opcode, uint32_t instr_count, uint32_t lba_offset, vector<uint32_t> &pg_idx_lst, stringstream &outfile_name, double &time, bool init_sha3 = false) {
+  assert(instr_count > 0);
   assert(pg_idx_lst.size() % instr_count == 0);
   uint32_t instr_pg_count = pg_idx_lst.size() / instr_count;
-  vector<Instr> instrs(instr_count);
+  vector<Instr> instrs(instr_count, Instr{opcode, 0, vector<uint32_t>(instr_pg_count)});
   for (size_t i = 0; i < instr_count; i++) {
-    auto start = instr_count * i;
-    instrs[i].opcode = opcode;
+    auto start = instr_pg_count * i;
     instrs[i].lba = lba_offset + start;
     copy(pg_idx_lst.begin() + start, pg_idx_lst.begin() + start + instr_pg_count, instrs[i].pg_idx_lst.begin());
   }
@@ -320,12 +320,14 @@ int main(int argc, char *argv[])
     }
 
     std::cout << endl << "Step2: clean new pages" << endl;
-    if (new_page_unique_count >= 0) {
+    if (new_page_unique_count > 0) {
       std::stringstream outfile_name;
       outfile_name << output_dir << "/resp_"<< timeStamp.str() << "_step2.txt";
 
       double time;
       modPages(ctx, OpCode::ERASE, new_page_unique_count, 0, initial_page_unique_count, new_page_unique_count, outfile_name, time);
+    } else {
+      std::cout << "Nothing to clean" << endl;
     }
 
     std::cout << endl << "Step3: start benchmarking, insertion only" << endl;
@@ -342,7 +344,7 @@ int main(int argc, char *argv[])
         
         random_shuffle(random_old_page_idx_lst.begin(), random_old_page_idx_lst.end());
         
-        for (int i = 0; i < n_page; i++){
+        for (int i = 0; i < n_page; i++) {
           if (i < new_page_unique_count){
             benchmark_page_idx_lst.push_back(i + initial_page_unique_count);
           } else {
@@ -357,7 +359,7 @@ int main(int argc, char *argv[])
       outfile_name << output_dir << "/resp_" << timeStamp.str() << "_step3_1.txt";
       double time;
       verbose && (std::cout << endl << "starting run " << bench_idx + 1 << "/" << n_bench_run << endl);
-      modPages(ctx, OpCode::WRITE, write_op_num, 100, benchmark_page_idx_lst, outfile_name, time);
+      modPages(ctx, OpCode::WRITE, write_op_num, 100000, benchmark_page_idx_lst, outfile_name, time);
       times_lst.push_back(time);
 
       outfile_name = std::stringstream();
