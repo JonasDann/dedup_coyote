@@ -8,6 +8,7 @@
 namespace dedup {
 
 enum OpCode {
+  READ,
   WRITE,
   ERASE
 };
@@ -66,6 +67,6 @@ void * set_nop(void * startPtr);
 void * set_write_instr(void * startPtr, int startLBA, int LBALen, bool printEn);
 void * set_erase_instr(void * startPtr, uint32_t * sha3Val, bool printEn);
 void * set_read_instr(void * startPtr, uint32_t * sha3Val, bool printEn);
-bool parse_response(vector<Instr> &instrs, void* rspMem, int* goldenPgIsExec, int* goldenPgRefCount, int* goldenPgIdx, ofstream& outfile);
+bool parse_response(vector<Instr>::iterator instrs_begin, vector<Instr>::iterator instrs_end, void* rspMem, int* goldenPgIsExec, int* goldenPgRefCount, int* goldenPgIdx, ofstream& outfile);
 
 } // namespace dedup

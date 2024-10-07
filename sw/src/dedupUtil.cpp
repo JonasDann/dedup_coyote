@@ -308,11 +308,12 @@ void * set_read_instr(void * startPtr, uint32_t * sha3Val, bool printEn = false)
     return (void *) (startPtrUInt32 + 16);
 }
 
-bool parse_response(vector<Instr> &instrs, void* rspMem, int* goldenPgIsExec, int* goldenPgRefCount, int* goldenPgIdx, ofstream& outfile) {
+bool parse_response(vector<Instr>::iterator instrs_begin, vector<Instr>::iterator instrs_end, void* rspMem, int* goldenPgIsExec, int* goldenPgRefCount, int* goldenPgIdx, ofstream& outfile) {
   bool allPassed = true;
   uint32_t* rspMemUInt32 = (uint32_t*) rspMem;
   uint32_t i = 0;
-  for (auto &instr : instrs) {
+  for (auto it = instrs_begin; it != instrs_end; ++it) {
+    auto &instr = *it;
     for (auto pg_idx : instr.pg_idx_lst) {
       uint32_t refCount     = rspMemUInt32[8];
       uint32_t SSDLBA       = rspMemUInt32[9];

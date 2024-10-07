@@ -32,6 +32,93 @@ using namespace std;
 using namespace fpga;
 using namespace dedup;
 
+void loadTrace(string trace, vector<Instr> &instrs, uint32_t &ne_read_pages) {
+  std::ifstream f(trace);
+  if (f.fail()) {
+    cout << "Error opening file " << trace << endl;
+    return;
+  }
+
+  unordered_map<string, uint32_t> md5_map; // Assigns MD5 hashes to unique page indices
+  unordered_set<uint32_t> lba_set; // Keeps track of the used LBAs to check if there is a write to an existing LBA
+  uint32_t pos_start = 0;
+  uint32_t pos_end, col, i = 0;
+  uint32_t curr_idx = 0;
+  uint32_t ne_read_idx = 0;
+  string prev_line, line, token;
+  prev_line = "";
+  while (getline(f, line)) {
+    if (strcmp(prev_line.c_str(), line.c_str()) == 0) {
+      cout << "Duplicate at line " << i << " which will be ignored" << endl;
+      continue;
+    }
+    Instr instr;
+    col = 0;
+    pos_start = 0;
+    bool done = false;
+    while (!done) {
+      if (col < 8) {
+        pos_end = line.find(" ", pos_start);
+      } else {
+        pos_end = line.size();
+        done = true;
+      }
+      token = line.substr(pos_start, pos_end - pos_start);
+      if (col == 3) {
+        instr.lba = stoul(token);
+      } else if (col == 5) {
+        instr.opcode = (token == "W") ? WRITE : READ;
+      } else if (col == 8) {
+        if (auto idx = md5_map.find(token); idx != md5_map.end()) { // If the page has been seen before
+          instr.pg_idx_lst.emplace_back(idx->second);
+        } else { // If the page has never been seen before
+          if (instr.opcode == READ) { // Handle reads to non-existing pages by inserting negative pages that are shifted later
+            ne_read_idx++;
+            instr.pg_idx_lst.emplace_back(-ne_read_idx);
+            md5_map[token] = -ne_read_idx;
+            // cout << i << " Non-existent read " << ne_read_idx << " " << token << endl;
+          } else {
+            instr.pg_idx_lst.emplace_back(curr_idx);
+            md5_map[token] = curr_idx;
+            curr_idx++;
+          }
+        }
+      }
+      pos_start = pos_end + 1;
+      col++;
+    }
+    if (instr.opcode == WRITE) {
+      if (auto lba_idx = lba_set.find(instr.lba); lba_idx != lba_set.end()) { // If this is a write to an existing LBA
+        Instr erase_instr{ERASE, instr.lba, {instr.pg_idx_lst[0]}}; // We have to erase the old contents first
+        instrs.emplace_back(erase_instr);
+        // cout << i << " Erase old content " << instr.lba << " " << instr.opcode << " " << instr.pg_idx_lst[0] << endl;
+      }
+    }
+    if (instr.opcode == WRITE && instrs.size() > 0 && instrs.back().opcode == WRITE && instrs.back().lba + (instrs.back().pg_idx_lst.size()) * 8 == instr.lba) { // If this is a sequential write in the context of the previous instruction
+      instrs.back().pg_idx_lst.emplace_back(instr.pg_idx_lst[0]); // Add the current instructions page to the previous write
+      // cout << i << " Add to previous " << instr.pg_idx_lst[0] << endl;
+    } else {
+      instrs.emplace_back(instr);
+      // cout << i << " Emplace back " << instr.lba << " " << instr.opcode << " " << instr.pg_idx_lst[0] << endl;
+    }
+    if (curr_idx + ne_read_idx >= dedupSys::node_ht_size) {
+      cout << "Read " << i << " lines of trace. Can't go on because we reached maximum number of unique pages (" << dedupSys::node_ht_size << ")" << endl;
+      break;
+    }
+    lba_set.insert(instr.lba);
+    prev_line = line;
+    i++;
+  }
+  f.close();
+
+  for (auto &instr : instrs) { // Shift all pages by number of non-existent reads
+    for (auto &pg_idx : instr.pg_idx_lst) {
+      pg_idx += ne_read_idx;
+    }
+  }
+  ne_read_pages = ne_read_idx;
+}
+
 /**
  * @brief Throughput and latency tests, read and write
  * 
@@ -53,7 +140,7 @@ int main(int argc, char *argv[])
   ("verbose,v", boost::program_options::value<uint32_t>()->default_value(1), "print all intermediate results")
   ("isActive,a",boost::program_options::value<uint32_t>()->default_value(1), "1 if the node will send data locally, otherwise just receive data from remote")
   ("syncOn,s",boost::program_options::value<uint32_t>()->default_value(1), "1 if turn on node sync, otherwise no sync between nodes")
-  ("trace,c", boost::program_options::value<string>()->default_value(""), "Real world trace to use for benchmark");
+  ("trace,t", boost::program_options::value<string>()->default_value(""), "Real world trace to use for benchmark");
   boost::program_options::variables_map commandLineArgs;
   boost::program_options::store(boost::program_options::parse_command_line(argc, argv, programDescription), commandLineArgs);
   boost::program_options::notify(commandLineArgs);
@@ -61,11 +148,10 @@ int main(int argc, char *argv[])
   uint32_t n_page = commandLineArgs["nPage"].as<uint32_t>();
   double dup_ratio = commandLineArgs["dupRatio"].as<double>();
   double hash_table_fullness = commandLineArgs["fullness"].as<double>();
-  uint32_t n_bench_run = commandLineArgs["nBenchRun"].as<uint32_t>();
-  uint32_t write_op_num = commandLineArgs["writeOpNum"].as<uint32_t>();
   bool verbose = static_cast<bool>(commandLineArgs["verbose"].as<uint32_t>());
   bool is_active = static_cast<bool>(commandLineArgs["isActive"].as<uint32_t>());
   bool sync_on = static_cast<bool>(commandLineArgs["syncOn"].as<uint32_t>());
+  string trace = static_cast<string>(commandLineArgs["trace"].as<string>());
 
   /************************************************/
   /************************************************/
@@ -103,7 +189,6 @@ int main(int argc, char *argv[])
 
   // checkings
   assert(n_page % 16 == 0 && "n_page should be an multiple of 16.");
-  assert(n_page % write_op_num == 0 && "n_page should be an multiple of writeOpNum.");
 
   // Handles and alloc
   cProcess cproc(TARGET_REGION, getpid());
@@ -117,19 +202,15 @@ int main(int argc, char *argv[])
   dedup_sys.waitSysInitDone(&cproc);
 
   if (is_active) {
-    // drived parameters
-    uint32_t initial_page_unique_count = (((uint32_t) (hash_table_fullness * dedupSys::node_ht_size) + 15)/16) * 16;
-    uint32_t new_page_unique_count = (((uint32_t) (n_page * (1 - dup_ratio)) + 15)/16) * 16;
-    uint32_t existing_page_unique_count =  n_page - new_page_unique_count;
-    uint32_t total_page_unique_count = initial_page_unique_count + new_page_unique_count;
-    assert (initial_page_unique_count >= 0);
-    assert (existing_page_unique_count <= initial_page_unique_count);
-    assert (total_page_unique_count <= dedupSys::node_ht_size);
+    uint32_t ne_read_pages;
+    vector<Instr> trace_instrs;
+    loadTrace(trace, trace_instrs, ne_read_pages);
+
+    uint32_t total_page_unique_count = 0.9921875 * dedupSys::node_ht_size;
     std::cout << "Config: "<< endl;
-    std::cout << "1. number of initial page to fill up: " << initial_page_unique_count << endl;
+    std::cout << "1. number of non-existent read pages to fill up: " << ne_read_pages << endl;
     std::cout << "2. number of page to run benchmark: " << n_page << endl;
-    std::cout << "3. number of existing page in benchmark: " << existing_page_unique_count << endl;
-    std::cout << "4. number of new page in benchmark: " << new_page_unique_count << endl;
+    std::cout << "4. number of pages in benchmark: " << total_page_unique_count << endl;
     
     // Step 1: Insert all initial and new pages, get SHA3
     std::cout << endl << "Step1: get all page SHA3, total unique page count: "<< total_page_unique_count << endl;
@@ -150,55 +231,41 @@ int main(int argc, char *argv[])
 
     Context ctx{dedup_sys, cproc, all_unique_page_buffer, all_unique_page_sha3, verbose, sync_on, goldenPgIsExec, goldenPgRefCount, goldenPgIdx, output_dir, timeStamp};
 
-    initPages(ctx, initial_page_unique_count, new_page_unique_count);
+    initPages(ctx, ne_read_pages, total_page_unique_count - ne_read_pages);
 
     // Step 3: Run benchmark
-    std::cout << endl << "Step3: start benchmarking, insertion only" << endl;
+    std::cout << endl << "Step3: start benchmarking" << endl;
     std::vector<double> times_lst;
-    std::cout << n_bench_run << " runs in total" << endl;
-    for (int bench_idx = 0; bench_idx < n_bench_run; bench_idx++) {
-      // create page insertion order
-      vector<uint32_t> benchmark_page_idx_lst;
-      {
-        vector<uint32_t> random_old_page_idx_lst;
-        for (int i = 0; i < initial_page_unique_count; i++){
-          random_old_page_idx_lst.push_back(i);
-        }
-        
-        random_shuffle(random_old_page_idx_lst.begin(), random_old_page_idx_lst.end());
-        
-        for (int i = 0; i < n_page; i++) {
-          if (i < new_page_unique_count){
-            benchmark_page_idx_lst.push_back(i + initial_page_unique_count);
-          } else {
-            // random one from old
-            benchmark_page_idx_lst.push_back(random_old_page_idx_lst[i - new_page_unique_count]);
-          }
-        }
+    bool done = false;
+    uint32_t start = 0, end = 0, page_count, i = 0;
+    while (!done) {
+      page_count = 0;
+      while (end < trace_instrs.size() && page_count + trace_instrs[end].pg_idx_lst.size() < n_page) {
+        page_count += trace_instrs[end].pg_idx_lst.size();
+        end++;
       }
-      random_shuffle(benchmark_page_idx_lst.begin(), benchmark_page_idx_lst.end());
-
+      std::cout << endl << "Starting run " << i << endl;
+      std::cout << "Number of instructions: " << end - start << endl;
+      std::cout << "Number of pages: " << page_count << endl;
       std::stringstream outfile_name;
       outfile_name << output_dir << "/resp_" << timeStamp.str() << "_step3_1.txt";
       double time;
-      verbose && (std::cout << endl << "starting run " << bench_idx + 1 << "/" << n_bench_run << endl);
-      modPages(ctx, OpCode::WRITE, write_op_num, 100000, benchmark_page_idx_lst, outfile_name, time);
+      modPages(ctx, trace_instrs.begin() + start, trace_instrs.begin() + end, outfile_name, time);
       times_lst.push_back(time);
-
-      outfile_name = std::stringstream();
-      outfile_name << output_dir << "/resp_" << timeStamp.str() << "_step3_2.txt";
-      modPages(ctx, OpCode::ERASE, n_page, 0, benchmark_page_idx_lst, outfile_name, time);
+      start = end;
+      i++;
     }
 
     std::cout << endl << "benchmarking done, avg time used: " << vctr_avg(times_lst) << " ns" << endl;
 
-    std::cout << endl << "Step4: clean up all remaining pages" << endl;
-    if (initial_page_unique_count >= 0) {
-      std::stringstream outfile_name;
-      outfile_name << output_dir << "/resp_" << timeStamp.str() << "_step4.txt";
-      double time;
-      modPages(ctx, OpCode::ERASE, initial_page_unique_count, 0, 0, initial_page_unique_count, outfile_name, time);
-    }
+    // TODO Cleanupo
+    //std::cout << endl << "Step4: clean up all remaining pages" << endl;
+    //if (initial_page_unique_count >= 0) {
+    //  std::stringstream outfile_name;
+    //  outfile_name << output_dir << "/resp_" << timeStamp.str() << "_step4.txt";
+    //  double time;
+    //  modPages(ctx, OpCode::ERASE, initial_page_unique_count, 0, 0, initial_page_unique_count, outfile_name, time);
+    //}
 
     cproc.clearCompleted();
     free(all_unique_page_buffer);
