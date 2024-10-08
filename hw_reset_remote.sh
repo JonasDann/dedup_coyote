@@ -5,10 +5,6 @@ set -o xtrace
 ##
 ## Args
 ##
-if ! [ -x "$(command -v vivado)" ]; then
-	echo "Vivado does NOT exist in the system."
-	exit 1
-fi
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 
 ##

@@ -13,17 +13,26 @@ DRV_INSERT=${2:-1}
 if [ $PROGRAM_FPGA -eq 1 ]; then
   echo "*** Loading bitstream..."
   echo " ** "
-  # ${CLI_PATH}/sgutil program vivado --bitstream /mnt/scratch/jiayli/distributed/build_2023_1229_2145_6FSM_noBF/bitstreams/cyt_top.bit
-  # ${CLI_PATH}/sgutil program vivado --bitstream /mnt/scratch/jiayli/distributed/build_2023_1217_0913_6FSM_BF/bitstreams/cyt_top.bit
-  # ${CLI_PATH}/sgutil program vivado --bitstream /mnt/scratch/jiayli/distributed/build_2023_1230_0852_8FSM_noBF/bitstreams/cyt_top.bit
-  # ${CLI_PATH}/sgutil program vivado --bitstream /mnt/scratch/jiayli/distributed/build_2024_0103_1630_6FSM_BF_10RoutingChannel/bitstreams/cyt_top.bit
+
+  if [ -d /tools/Xilinx/Vivado/2022.1 ]; then
+    source /tools/Xilinx/Vivado/2022.1/settings64.sh
+  else
+    source /tools/Xilinx/Vivado/2024.1/settings64.sh
+  fi
+  
   ${CLI_PATH}/sgutil program vivado --bitstream ${SCRIPT_DIR}/hw/build/bitstreams/cyt_top.bit
 fi
 
 if [ $DRV_INSERT -eq 1 ]; then
+  IP_address_0=$($CLI_PATH/sgutil get network -d $device_index | awk '$1 == "1:" {print $2}')
+  MAC_address_0=$($CLI_PATH/sgutil get network -d $device_index | awk '$1 == "1:" {print $3}' | tr -d '()')
+  DEVICE_1_IP_ADDRESS_HEX_0=$($CLI_PATH/common/address_to_hex IP $IP_address_0)
+  DEVICE_1_MAC_ADDRESS_0=$($CLI_PATH/common/address_to_hex MAC $MAC_address_0)
+
   echo "*** Loading driver..."
   echo " ** "
-  ${CLI_PATH}/sgutil program driver -i ${SCRIPT_DIR}/driver/coyote_drv.ko -p "ip_addr_q${QSFP_PORT}=${DEVICE_1_IP_ADDRESS_HEX_0},mac_addr_q${QSFP_PORT}=${DEVICE_1_MAC_ADDRESS_0}"
+  sudo rmmod coyote_drv
+  sudo insmod ${SCRIPT_DIR}/driver/coyote_drv.ko ip_addr_q${QSFP_PORT}=${DEVICE_1_IP_ADDRESS_HEX_0} mac_addr_q${QSFP_PORT}=${DEVICE_1_MAC_ADDRESS_0}
 
   # We need this to add read and write permissions for everybody on the fpga device file
   echo "*** Chmod FPGA ..."	
