@@ -32,7 +32,7 @@ using namespace std;
 using namespace fpga;
 using namespace dedup;
 
-void loadTrace(string trace, vector<Instr> &instrs, uint32_t &ne_read_pages) {
+void loadTrace(string trace, vector<Instr> &instrs, uint32_t &ne_read_pages, uint32_t total_page_unique_count) {
   std::ifstream f(trace);
   if (f.fail()) {
     cout << "Error opening file " << trace << endl;
@@ -101,8 +101,8 @@ void loadTrace(string trace, vector<Instr> &instrs, uint32_t &ne_read_pages) {
       instrs.emplace_back(instr);
       // cout << i << " Emplace back " << instr.lba << " " << instr.opcode << " " << instr.pg_idx_lst[0] << endl;
     }
-    if (curr_idx + ne_read_idx >= dedupSys::node_ht_size) {
-      cout << "Read " << i << " lines of trace. Can't go on because we reached maximum number of unique pages (" << dedupSys::node_ht_size << ")" << endl;
+    if (curr_idx + ne_read_idx >= total_page_unique_count) {
+      cout << "Read " << i << " lines of trace. Can't go on because we reached maximum number of unique pages (" << total_page_unique_count << ")" << endl;
       break;
     }
     lba_set.insert(instr.lba);
@@ -133,10 +133,7 @@ int main(int argc, char *argv[])
   boost::program_options::options_description programDescription("Options:");
   programDescription.add_options()
   ("nPage,n", boost::program_options::value<uint32_t>()->default_value(1024), "Number of Pages in 1 Batch")
-  ("dupRatio,d", boost::program_options::value<double>()->default_value(0.5), "Overlap(batch, existing page)/nPage")
   ("fullness,f", boost::program_options::value<double>()->default_value(0.5), "fullness of hash table")
-  ("writeOpNum,w", boost::program_options::value<uint32_t>()->default_value(8), "Write op Num")
-  ("nBenchRun,r", boost::program_options::value<uint32_t>()->default_value(4), "Number of bench run")
   ("verbose,v", boost::program_options::value<uint32_t>()->default_value(1), "print all intermediate results")
   ("isActive,a",boost::program_options::value<uint32_t>()->default_value(1), "1 if the node will send data locally, otherwise just receive data from remote")
   ("syncOn,s",boost::program_options::value<uint32_t>()->default_value(1), "1 if turn on node sync, otherwise no sync between nodes")
@@ -146,7 +143,6 @@ int main(int argc, char *argv[])
   boost::program_options::notify(commandLineArgs);
   
   uint32_t n_page = commandLineArgs["nPage"].as<uint32_t>();
-  double dup_ratio = commandLineArgs["dupRatio"].as<double>();
   double hash_table_fullness = commandLineArgs["fullness"].as<double>();
   bool verbose = static_cast<bool>(commandLineArgs["verbose"].as<uint32_t>());
   bool is_active = static_cast<bool>(commandLineArgs["isActive"].as<uint32_t>());
@@ -173,7 +169,7 @@ int main(int argc, char *argv[])
   /* Module 2: run dedup */
   /************************************************/
   /************************************************/
-  string output_dir = project_dir + "/sw/examples/dedup_sys_test1/page_resp/" + dedup_sys.node_host_name;
+  string output_dir = project_dir + "/sw/examples/dedup_sys_trace/page_resp/" + dedup_sys.node_host_name;
   // string 
   // Create the directory with read/write/search permissions for owner and group, and with read/search permissions for others
   try {
@@ -202,11 +198,12 @@ int main(int argc, char *argv[])
   dedup_sys.waitSysInitDone(&cproc);
 
   if (is_active) {
+    uint32_t total_page_unique_count = (((uint32_t) (hash_table_fullness * dedupSys::node_ht_size) + 15)/16) * 16;
     uint32_t ne_read_pages;
     vector<Instr> trace_instrs;
-    loadTrace(trace, trace_instrs, ne_read_pages);
-
-    uint32_t total_page_unique_count = 0.9921875 * dedupSys::node_ht_size;
+    loadTrace(trace, trace_instrs, ne_read_pages, total_page_unique_count);
+    ne_read_pages = ((ne_read_pages + 15)/16) * 16; // Apparently has to be multiple of 16. No idea why
+    
     std::cout << "Config: "<< endl;
     std::cout << "1. number of non-existent read pages to fill up: " << ne_read_pages << endl;
     std::cout << "2. number of page to run benchmark: " << n_page << endl;
@@ -236,27 +233,37 @@ int main(int argc, char *argv[])
     // Step 3: Run benchmark
     std::cout << endl << "Step3: start benchmarking" << endl;
     std::vector<double> times_lst;
-    bool done = false;
+    size_t total_page_count = 0;
     uint32_t start = 0, end = 0, page_count, i = 0;
-    while (!done) {
+    while (end < trace_instrs.size()) {
       page_count = 0;
       while (end < trace_instrs.size() && page_count + trace_instrs[end].pg_idx_lst.size() < n_page) {
         page_count += trace_instrs[end].pg_idx_lst.size();
         end++;
       }
-      std::cout << endl << "Starting run " << i << endl;
+      vector<Instr> instrs(trace_instrs.begin() + start, trace_instrs.begin() + end);
+      for (auto i = 0; i < page_count % 16; i++) {
+        instrs.push_back({READ, 0, {0}}); // Again need some padding for some reason
+        page_count++;
+      }
+      std::cout << endl << "Starting run " << i << " [" << start << ",  " <<  end << "]" << endl;
       std::cout << "Number of instructions: " << end - start << endl;
       std::cout << "Number of pages: " << page_count << endl;
       std::stringstream outfile_name;
       outfile_name << output_dir << "/resp_" << timeStamp.str() << "_step3_1.txt";
       double time;
-      modPages(ctx, trace_instrs.begin() + start, trace_instrs.begin() + end, outfile_name, time);
+      modPages(ctx, instrs.begin(), instrs.end(), outfile_name, time); // TODO Validation does not work with traces because parse_response assumes that every page is only touched once
       times_lst.push_back(time);
+      total_page_count += page_count;
       start = end;
       i++;
     }
 
+    auto total_time = std::accumulate(times_lst.begin(), times_lst.end(), (double) 0);
     std::cout << endl << "benchmarking done, avg time used: " << vctr_avg(times_lst) << " ns" << endl;
+    cout << "total time used for " << trace_instrs.size() << " instructions: " << total_time << " ns" << endl;
+    cout << "kIOPS: " << ((double) total_page_count) / (total_time / 1000000) << endl;
+    cout << "GB/s: " << ((double) total_page_count * 4096) / total_time << endl;
 
     // TODO Cleanupo
     //std::cout << endl << "Step4: clean up all remaining pages" << endl;
