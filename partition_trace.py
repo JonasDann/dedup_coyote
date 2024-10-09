@@ -9,37 +9,39 @@ page_count = 0
 ne_read_count = 0
 partition_count = 10
 max_pages = partition_count * 260096
-pages = set()
+page_map = dict()
 total_line_count = 0
 values = ["0"]
+counted_filename = os.path.join(folder, name + ".counted")
 with open(os.path.join(folder, "non_existent_reads.txt"), "w") as nerf:
-  for filename in sorted(glob.glob(os.path.join(folder, "*.blkparse"))):
-    counted_filename = filename.replace("blkparse", "counted")
-    print("Starting with file " + filename)
+  with open(counted_filename, "w") as of:
     print("Writing to " + counted_filename)
-    with open(filename, "r") as f:
-      with open(counted_filename, "w") as of:
+    for filename in sorted(glob.glob(os.path.join(folder, "*.blkparse"))):
+      print("Reading file " + filename)
+      with open(filename, "r") as f:
         prev_line = ""
         line_count = 0
         for line in f.readlines():
           if line != prev_line:
             values = line.split(" ")
             if len(values) == 9:
-              if not values[8] in pages:
+              if values[8] in page_map:
+                of.write(values[3] + " " + values[5] + " " + str(page_map[values[8]]) + "\n")
+              else:
+                of.write(values[3] + " " + values[5] + " " + str(page_count) + "\n")
                 if values[5] == "R":
-                  nerf.write(values[8])
+                  nerf.write(str(page_count) + "\n")
                   ne_read_count += 1
-                pages.add(values[8])
+                page_map[values[8]] = page_count
                 page_count += 1
                 if page_count >= max_pages:
                   break
-              of.write(line)
               line_count += 1
-          prev_line = line
+            prev_line = line
         print("File has " + str(line_count) + " lines")
         total_line_count += line_count
-    if page_count >= max_pages:
-      break
+      if page_count >= max_pages:
+        break
 
 print("Last timestamp: " + values[0])
 print("Total line count: " + str(total_line_count))
@@ -53,12 +55,11 @@ curr_line = 0
 ofs = []
 for i in range(partition_count):
   ofs.append(open(os.path.join(folder, name + ".trace." + str(i)), "w"))
-for filename in sorted(glob.glob(os.path.join(folder, "*.counted"))):
-  print("Starting with file " + filename)
-  with open(filename, "r") as f:
-    for line in f:
-      ofs[curr_line % partition_count].write(line)
-      curr_line += 1
+print("Reading file " + counted_filename)
+with open(counted_filename, "r") as f:
+  for line in f:
+    ofs[curr_line % partition_count].write(line)
+    curr_line += 1
 for i in range(partition_count):
   ofs[i].close()
 
