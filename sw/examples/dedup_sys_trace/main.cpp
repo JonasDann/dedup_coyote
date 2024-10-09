@@ -32,57 +32,52 @@ using namespace std;
 using namespace fpga;
 using namespace dedup;
 
-void loadTrace(string trace, vector<Instr> &instrs, uint32_t &ne_read_pages, uint32_t total_page_unique_count) {
-  std::ifstream f(trace);
-  if (f.fail()) {
-    cout << "Error opening file " << trace << endl;
+void loadTrace(string trace, vector<uint32_t> ne_read_pages, vector<Instr> &instrs) {
+  string ne_read_filename(trace);
+  auto pos = ne_read_filename.find("trace");
+  ne_read_filename.replace(pos, 5, "nereads");
+  std::ifstream nerf(ne_read_filename);
+  if (nerf.fail()) {
+    cout << "Error opening non-existent reads file " << trace << endl;
     return;
   }
 
-  unordered_map<string, uint32_t> md5_map; // Assigns MD5 hashes to unique page indices
+  string line;
+  while (getline(nerf, line)) {
+    ne_read_pages.emplace_back(stoul(token));
+  }
+
+  nerf.close();
+  
+  std::ifstream f(trace);
+  if (f.fail()) {
+    cout << "Error opening trace file " << trace << endl;
+    return;
+  }
+
   unordered_set<uint32_t> lba_set; // Keeps track of the used LBAs to check if there is a write to an existing LBA
   uint32_t pos_start = 0;
-  uint32_t pos_end, col, i = 0;
-  uint32_t curr_idx = 0;
-  uint32_t ne_read_idx = 0;
-  string prev_line, line, token;
-  prev_line = "";
+  uint32_t pos_end, col;
+  string line, token;
   while (getline(f, line)) {
-    if (strcmp(prev_line.c_str(), line.c_str()) == 0) {
-      cout << "Duplicate at line " << i << " which will be ignored" << endl;
-      continue;
-    }
     Instr instr;
     col = 0;
     pos_start = 0;
     bool done = false;
     while (!done) {
-      if (col < 8) {
+      if (col < 3) {
         pos_end = line.find(" ", pos_start);
       } else {
         pos_end = line.size();
         done = true;
       }
       token = line.substr(pos_start, pos_end - pos_start);
-      if (col == 3) {
+      if (col == 0) {
         instr.lba = stoul(token);
-      } else if (col == 5) {
+      } else if (col == 1) {
         instr.opcode = (token == "W") ? WRITE : READ;
-      } else if (col == 8) {
-        if (auto idx = md5_map.find(token); idx != md5_map.end()) { // If the page has been seen before
-          instr.pg_idx_lst.emplace_back(idx->second);
-        } else { // If the page has never been seen before
-          if (instr.opcode == READ) { // Handle reads to non-existing pages by inserting negative pages that are shifted later
-            ne_read_idx++;
-            instr.pg_idx_lst.emplace_back(-ne_read_idx);
-            md5_map[token] = -ne_read_idx;
-            // cout << i << " Non-existent read " << ne_read_idx << " " << token << endl;
-          } else {
-            instr.pg_idx_lst.emplace_back(curr_idx);
-            md5_map[token] = curr_idx;
-            curr_idx++;
-          }
-        }
+      } else if (col == 2) {
+        instr.pg_idx_lst.emplace_back(stoul(token));
       }
       pos_start = pos_end + 1;
       col++;
@@ -91,32 +86,17 @@ void loadTrace(string trace, vector<Instr> &instrs, uint32_t &ne_read_pages, uin
       if (auto lba_idx = lba_set.find(instr.lba); lba_idx != lba_set.end()) { // If this is a write to an existing LBA
         Instr erase_instr{ERASE, instr.lba, {instr.pg_idx_lst[0]}}; // We have to erase the old contents first
         instrs.emplace_back(erase_instr);
-        // cout << i << " Erase old content " << instr.lba << " " << instr.opcode << " " << instr.pg_idx_lst[0] << endl;
       }
     }
     if (instr.opcode == WRITE && instrs.size() > 0 && instrs.back().opcode == WRITE && instrs.back().lba + (instrs.back().pg_idx_lst.size()) * 8 == instr.lba) { // If this is a sequential write in the context of the previous instruction
       instrs.back().pg_idx_lst.emplace_back(instr.pg_idx_lst[0]); // Add the current instructions page to the previous write
-      // cout << i << " Add to previous " << instr.pg_idx_lst[0] << endl;
     } else {
       instrs.emplace_back(instr);
-      // cout << i << " Emplace back " << instr.lba << " " << instr.opcode << " " << instr.pg_idx_lst[0] << endl;
-    }
-    if (curr_idx + ne_read_idx >= total_page_unique_count) {
-      cout << "Read " << i << " lines of trace. Can't go on because we reached maximum number of unique pages (" << total_page_unique_count << ")" << endl;
-      break;
     }
     lba_set.insert(instr.lba);
-    prev_line = line;
     i++;
   }
   f.close();
-
-  for (auto &instr : instrs) { // Shift all pages by number of non-existent reads
-    for (auto &pg_idx : instr.pg_idx_lst) {
-      pg_idx += ne_read_idx;
-    }
-  }
-  ne_read_pages = ne_read_idx;
 }
 
 /**
@@ -137,7 +117,8 @@ int main(int argc, char *argv[])
   ("verbose,v", boost::program_options::value<uint32_t>()->default_value(1), "print all intermediate results")
   ("isActive,a",boost::program_options::value<uint32_t>()->default_value(1), "1 if the node will send data locally, otherwise just receive data from remote")
   ("syncOn,s",boost::program_options::value<uint32_t>()->default_value(1), "1 if turn on node sync, otherwise no sync between nodes")
-  ("trace,t", boost::program_options::value<string>()->default_value(""), "Real world trace to use for benchmark");
+  ("trace,t", boost::program_options::value<string>()->default_value(""), "Real world trace to use for benchmark")
+  ("pages,p", boost::program_options::value<string>()->default_value(""), "Binary file for random page data");
   boost::program_options::variables_map commandLineArgs;
   boost::program_options::store(boost::program_options::parse_command_line(argc, argv, programDescription), commandLineArgs);
   boost::program_options::notify(commandLineArgs);
@@ -207,7 +188,7 @@ int main(int argc, char *argv[])
     std::cout << "Config: "<< endl;
     std::cout << "1. number of non-existent read pages to fill up: " << ne_read_pages << endl;
     std::cout << "2. number of page to run benchmark: " << n_page << endl;
-    std::cout << "4. number of pages in benchmark: " << total_page_unique_count << endl;
+    std::cout << "3. number of pages in benchmark: " << total_page_unique_count << endl;
     
     // Step 1: Insert all initial and new pages, get SHA3
     std::cout << endl << "Step1: get all page SHA3, total unique page count: "<< total_page_unique_count << endl;

@@ -87,8 +87,10 @@ bool modPages(Context &ctx, vector<Instr>::iterator instrs_begin, vector<Instr>:
   uint32_t n_hugepage_req = ceilHugePage((data_pg_count + instr_pg_num) * dedupSys::pg_size); // roundup, number of hugepage for n page
   uint32_t n_hugepage_rsp = ceilHugePage(pg_count * 64); // roundup, number of huge page for 64B response from each page
 
-  void* reqMem = ctx.cproc.getMem({CoyoteAlloc::HOST_2M, n_hugepage_req});
-  void* rspMem = ctx.cproc.getMem({CoyoteAlloc::HOST_2M, n_hugepage_rsp});
+  void *reqMem = ctx.cproc.getMem({CoyoteAlloc::HOST_2M, n_hugepage_req});
+  void *rspMem = ctx.cproc.getMem({CoyoteAlloc::HOST_2M, n_hugepage_rsp});
+  assert(reqMem != NULL);
+  assert(rspMem != NULL);
 
   void* initPtr = reqMem;
   for (auto it = instrs_begin; it != instrs_end; ++it) {
@@ -102,14 +104,14 @@ bool modPages(Context &ctx, vector<Instr>::iterator instrs_begin, vector<Instr>:
       initPtr = set_write_instr(initPtr, instr.lba, instr.pg_idx_lst.size(), false);
 
       // set pages
-      char* initPtrChar = (char*) initPtr;
+      char *initPtrChar = (char *) initPtr;
       for (int i = 0; i < instr.pg_idx_lst.size(); i ++) {
-        int pgIdx = instr.pg_idx_lst[i];
+        size_t pgIdx = instr.pg_idx_lst[i];
         memcpy(initPtrChar, ctx.all_unique_page_buffer + pgIdx * dedupSys::pg_size, dedupSys::pg_size); // copy pages to request buffer
         updateGolden(ctx, instr.opcode, pgIdx, instr.lba + i);
         initPtrChar += dedupSys::pg_size;
       }
-      initPtr = (void*) initPtrChar;
+      initPtr = (void *) initPtrChar;
     } else {
       assert(instr.pg_idx_lst.size() == 1);
       initPtr = set_erase_instr(initPtr, ctx.all_unique_page_sha3 + instr.pg_idx_lst[0] * 8, false);
@@ -146,8 +148,8 @@ bool modPages(Context &ctx, vector<Instr>::iterator instrs_begin, vector<Instr>:
   if (init_sha3) { // Copy SHA3 hashes from response to buffer
     uint32_t* rspMemUInt32 = (uint32_t*) rspMem;
     ctx.verbose && (std::cout << "get all SHA3" << endl);
-    for (int i=0; i < pg_count; i++) {
-      memcpy(ctx.all_unique_page_sha3 + instrs_begin->pg_idx_lst[i] * 8, (void*) (rspMemUInt32 + i * 16), 32); // This only works if there is only one write instruction for the init call
+    for (int i = 0; i < pg_count; i++) {
+      memcpy(ctx.all_unique_page_sha3 + (size_t) instrs_begin->pg_idx_lst[i] * 8, (void*) (rspMemUInt32 + i * 16), 32); // This only works if there is only one write instruction for the init call
     }
   }
 
@@ -211,6 +213,28 @@ void initPages(Context &ctx, uint32_t initial_page_unique_count, uint32_t new_pa
   } else {
     std::cout << "Nothing to clean" << endl;
   }
+}
+
+bool initSHA3(Context &ctx, size_t total_page_unique_count) {
+  // support 64x2M page address mapping, do 32 in one insertion round
+  size_t n_insertion_round = (total_page_unique_count + 32 * dedupSys::pg_per_huge_pg - 1) / (32 * dedupSys::pg_per_huge_pg);
+  std::cout << "insert all unique pages, in "<< n_insertion_round << " rounds"<< endl;
+
+  for (int insertion_round_idx = 0; insertion_round_idx < n_insertion_round; insertion_round_idx++) {
+    size_t pg_idx_start = insertion_round_idx * 32 * dedupSys::pg_per_huge_pg;
+    size_t pg_idx_end = ((pg_idx_start + 32 * dedupSys::pg_per_huge_pg) > total_page_unique_count) ? total_page_unique_count : (pg_idx_start + 32 * dedupSys::pg_per_huge_pg);
+    size_t pg_idx_count = pg_idx_end - pg_idx_start;
+    stringstream outfile_name;
+    outfile_name << ctx.output_dir << "/resp_" << ctx.timeStamp.str() << "_step1.txt";
+    std::cout << "round " << insertion_round_idx << endl;
+
+    double time;
+    auto check_res = modPages(ctx, OpCode::WRITE, 1, 100, pg_idx_start, pg_idx_count, outfile_name, time, true); // This only works if there is only one write instruction for the init call
+    if (!check_res) return false;
+    check_res = modPages(ctx, OpCode::ERASE, pg_idx_count, 0, pg_idx_start, pg_idx_count, outfile_name, time);
+    if (!check_res) return false;
+  }
+  return true;
 }
 
 }
