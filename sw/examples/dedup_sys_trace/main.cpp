@@ -82,7 +82,7 @@ void loadTrace(string trace, vector<uint32_t> &ne_read_pages, vector<Instr> &ins
       pos_start = pos_end + 1;
       col++;
     }
-    if (instr.opcode == WRITE) {
+    /*if (instr.opcode == WRITE) {
       if (auto lba_idx = lba_set.find(instr.lba); lba_idx != lba_set.end()) { // If this is a write to an existing LBA // TODO This is currently not correct because it cannot be decided locally with a partitioned trace. This has to be moved to the trace partitioning
         Instr erase_instr{ERASE, instr.lba, {instr.pg_idx_lst[0]}}; // We have to erase the old contents first
         instrs.emplace_back(erase_instr);
@@ -92,7 +92,8 @@ void loadTrace(string trace, vector<uint32_t> &ne_read_pages, vector<Instr> &ins
       instrs.back().pg_idx_lst.emplace_back(instr.pg_idx_lst[0]); // Add the current instructions page to the previous write
     } else {
       instrs.emplace_back(instr);
-    }
+    }*/
+    instrs.emplace_back(instr);
     lba_set.insert(instr.lba);
   }
   f.close();
@@ -139,11 +140,11 @@ int main(int argc, char *argv[])
   auto dedup_sys = dedup::dedupSys();
   dedup_sys.initializeNetworkInfo(project_dir);
   dedup_sys.setupConnections();
-  sync_on && dedup_sys.syncBarrier();
+  dedup_sys.syncBarrier();
   sleep(1);
   dedup_sys.exchangeQps();
   sleep(1);
-  sync_on && dedup_sys.syncBarrier();
+  dedup_sys.syncBarrier();
 
   /************************************************/
   /************************************************/
@@ -209,7 +210,7 @@ int main(int argc, char *argv[])
     int* goldenPgIdx = (int*) malloc(total_page_unique_count * sizeof(int));
     memset(goldenPgRefCount, 0, total_page_unique_count * sizeof(int));
 
-    Context ctx{dedup_sys, cproc, all_unique_page_buffer, all_unique_page_sha3, verbose, sync_on, goldenPgIsExec, goldenPgRefCount, goldenPgIdx, output_dir, timeStamp};
+    Context ctx{dedup_sys, cproc, all_unique_page_buffer, all_unique_page_sha3, verbose, false, goldenPgIsExec, goldenPgRefCount, goldenPgIdx, output_dir, timeStamp};
 
     stringstream outfile_name;
     outfile_name << ctx.output_dir << "/resp_" << ctx.timeStamp.str() << "_step1.txt";
@@ -221,7 +222,8 @@ int main(int argc, char *argv[])
         ne_read_pages.emplace_back(0);
       }
     }
-    modPages(ctx, WRITE, ne_read_pages.size(), 0, ne_read_pages, outfile_name, time);
+    modPages(ctx, WRITE, ne_read_pages.size(), 0, ne_read_pages, outfile_name, time, false, false);
+    dedup_sys.syncBarrier();
 
     // Step 3: Run benchmark
     std::cout << endl << "Step3: start benchmarking" << endl;
@@ -230,7 +232,7 @@ int main(int argc, char *argv[])
     uint32_t start = 0, end = 0, page_count, i = 0;
     while (end < trace_instrs.size()) {
       page_count = 0;
-      while (end < trace_instrs.size() && page_count + trace_instrs[end].pg_idx_lst.size() < n_page) {
+      while (end < trace_instrs.size() && page_count + trace_instrs[end].pg_idx_lst.size() <= n_page) {
         page_count += trace_instrs[end].pg_idx_lst.size();
         end++;
       }
@@ -249,7 +251,7 @@ int main(int argc, char *argv[])
       std::stringstream outfile_name;
       outfile_name << output_dir << "/resp_" << timeStamp.str() << "_step3_1.txt";
       double time;
-      modPages(ctx, instrs.begin(), instrs.end(), outfile_name, time); // TODO Validation does not work with traces because parse_response assumes that every page is only touched once
+      modPages(ctx, instrs.begin(), instrs.end(), outfile_name, time, false, false); // TODO Validation does not work with traces because parse_response assumes that every page is only touched once and nodes are not aware of other nodes requests
       times_lst.push_back(time);
       total_page_count += page_count;
       start = end;
@@ -263,6 +265,8 @@ int main(int argc, char *argv[])
     cout << "total time used for " << trace_instrs.size() << " instructions: " << total_time << " ns" << endl;
     cout << "kIOPS: " << ((double) total_page_count) / (total_time / 1000000) << endl;
     cout << "GB/s: " << ((double) total_page_count * 4096) / total_time << endl;
+
+    dedup_sys.syncBarrier();
 
     // TODO Cleanupo
     //std::cout << endl << "Step4: clean up all remaining pages" << endl;

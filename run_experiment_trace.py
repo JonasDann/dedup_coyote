@@ -79,7 +79,7 @@ def analyze_results(hostnames, output_dir):
 
     # Print results
     print(time_results)
-    if time_results[0.]:
+    if time_results[0]:
         for command, passed_list in command_results.items():
             all_passed = all(passed_list)
             avg_time = sum(time_results[command]) / len(time_results[command])

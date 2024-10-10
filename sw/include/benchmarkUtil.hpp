@@ -70,7 +70,7 @@ void updateGolden(Context &ctx, OpCode &instr, uint32_t pgIdx, uint32_t lba) {
   }
 }
 
-bool modPages(Context &ctx, vector<Instr>::iterator instrs_begin, vector<Instr>::iterator instrs_end, stringstream &outfile_name, double &time, bool init_sha3 = false) {
+bool modPages(Context &ctx, vector<Instr>::iterator instrs_begin, vector<Instr>::iterator instrs_end, stringstream &outfile_name, double &time, bool init_sha3 = false, bool validate = true) {
   uint32_t pg_count = 0;
   uint32_t data_pg_count = 0; // How much page data actually has to be communicated
   uint32_t instr_count = 0;
@@ -122,9 +122,11 @@ bool modPages(Context &ctx, vector<Instr>::iterator instrs_begin, vector<Instr>:
     initPtr = set_nop(initPtr); // pad with nops to make page full. Otherwise, uninitialized random data could trigger instructions
   }
   
-  ctx.verbose && (std::cout << "start execution" << endl);
+  ctx.verbose && (std::cout << "Start execution" << endl);
   dedupSys::setReqStream(&ctx.cproc, reqMem, data_pg_count + instr_pg_num, rspMem);
+  ctx.sync_on && ctx.verbose && (std::cout << "Wait on sync" << endl);
   ctx.sync_on && ctx.dedup_sys.syncBarrier();
+  ctx.sync_on && ctx.verbose && (std::cout << "Sync done" << endl);
 
   auto begin_time = std::chrono::high_resolution_clock::now();
   dedupSys::setStart(&ctx.cproc);
@@ -142,8 +144,11 @@ bool modPages(Context &ctx, vector<Instr>::iterator instrs_begin, vector<Instr>:
     outfile.open(outfile_name.str(), ios::out);
   }
 
-  ctx.verbose && (std::cout << "parsing the results" << endl);
-  bool check_res = parse_response(instrs_begin, instrs_end, rspMem, ctx.goldenPgIsExec, ctx.goldenPgRefCount, ctx.goldenPgIdx, outfile);
+  bool check_res = true;
+  if (validate) {
+    ctx.verbose && (std::cout << "parsing the results" << endl);
+    bool check_res = parse_response(instrs_begin, instrs_end, rspMem, ctx.goldenPgIsExec, ctx.goldenPgRefCount, ctx.goldenPgIdx, outfile);
+  }
 
   if (init_sha3) { // Copy SHA3 hashes from response to buffer
     uint32_t* rspMemUInt32 = (uint32_t*) rspMem;
@@ -164,7 +169,7 @@ bool modPages(Context &ctx, vector<Instr>::iterator instrs_begin, vector<Instr>:
   return check_res;
 }
 
-bool modPages(Context &ctx, OpCode opcode, uint32_t instr_count, uint32_t lba_offset, vector<uint32_t> &pg_idx_lst, stringstream &outfile_name, double &time, bool init_sha3 = false) {
+bool modPages(Context &ctx, OpCode opcode, uint32_t instr_count, uint32_t lba_offset, vector<uint32_t> &pg_idx_lst, stringstream &outfile_name, double &time, bool init_sha3 = false, bool validate = true) {
   assert(instr_count > 0);
   assert(pg_idx_lst.size() % instr_count == 0);
   uint32_t instr_pg_count = pg_idx_lst.size() / instr_count;
@@ -174,7 +179,7 @@ bool modPages(Context &ctx, OpCode opcode, uint32_t instr_count, uint32_t lba_of
     instrs[i].lba = lba_offset + start;
     copy(pg_idx_lst.begin() + start, pg_idx_lst.begin() + start + instr_pg_count, instrs[i].pg_idx_lst.begin());
   }
-  return modPages(ctx, instrs.begin(), instrs.end(), outfile_name, time, init_sha3);
+  return modPages(ctx, instrs.begin(), instrs.end(), outfile_name, time, init_sha3, validate);
 }
 
 bool modPages(Context &ctx, OpCode instr, uint32_t instr_count, uint32_t lba_offset, uint32_t pg_idx_start, uint32_t pg_count, stringstream &outfile_name, double &time, bool init_sha3 = false) {
