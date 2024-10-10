@@ -32,7 +32,7 @@ using namespace std;
 using namespace fpga;
 using namespace dedup;
 
-void loadTrace(string trace, vector<uint32_t> ne_read_pages, vector<Instr> &instrs) {
+void loadTrace(string trace, vector<uint32_t> &ne_read_pages, vector<Instr> &instrs) {
   string ne_read_filename(trace);
   auto pos = ne_read_filename.find("trace");
   ne_read_filename.replace(pos, 5, "nereads");
@@ -44,7 +44,7 @@ void loadTrace(string trace, vector<uint32_t> ne_read_pages, vector<Instr> &inst
 
   string line;
   while (getline(nerf, line)) {
-    ne_read_pages.emplace_back(stoul(token));
+    ne_read_pages.emplace_back(stoul(line));
   }
 
   nerf.close();
@@ -58,7 +58,7 @@ void loadTrace(string trace, vector<uint32_t> ne_read_pages, vector<Instr> &inst
   unordered_set<uint32_t> lba_set; // Keeps track of the used LBAs to check if there is a write to an existing LBA
   uint32_t pos_start = 0;
   uint32_t pos_end, col;
-  string line, token;
+  string token;
   while (getline(f, line)) {
     Instr instr;
     col = 0;
@@ -83,18 +83,17 @@ void loadTrace(string trace, vector<uint32_t> ne_read_pages, vector<Instr> &inst
       col++;
     }
     if (instr.opcode == WRITE) {
-      if (auto lba_idx = lba_set.find(instr.lba); lba_idx != lba_set.end()) { // If this is a write to an existing LBA
+      if (auto lba_idx = lba_set.find(instr.lba); lba_idx != lba_set.end()) { // If this is a write to an existing LBA // TODO This is currently not correct because it cannot be decided locally with a partitioned trace. This has to be moved to the trace partitioning
         Instr erase_instr{ERASE, instr.lba, {instr.pg_idx_lst[0]}}; // We have to erase the old contents first
         instrs.emplace_back(erase_instr);
       }
     }
-    if (instr.opcode == WRITE && instrs.size() > 0 && instrs.back().opcode == WRITE && instrs.back().lba + (instrs.back().pg_idx_lst.size()) * 8 == instr.lba) { // If this is a sequential write in the context of the previous instruction
+    if (instr.opcode == WRITE && instrs.size() > 0 && instrs.back().opcode == WRITE && instrs.back().lba + (instrs.back().pg_idx_lst.size()) * 8 == instr.lba) { // If this is a sequential write in the context of the previous instruction // TODO These do currently not work because the trace is striped during trace partitioning
       instrs.back().pg_idx_lst.emplace_back(instr.pg_idx_lst[0]); // Add the current instructions page to the previous write
     } else {
       instrs.emplace_back(instr);
     }
     lba_set.insert(instr.lba);
-    i++;
   }
   f.close();
 }
@@ -129,6 +128,7 @@ int main(int argc, char *argv[])
   bool is_active = static_cast<bool>(commandLineArgs["isActive"].as<uint32_t>());
   bool sync_on = static_cast<bool>(commandLineArgs["syncOn"].as<uint32_t>());
   string trace = static_cast<string>(commandLineArgs["trace"].as<string>());
+  string page_filename = static_cast<string>(commandLineArgs["pages"].as<string>());
 
   /************************************************/
   /************************************************/
@@ -179,14 +179,13 @@ int main(int argc, char *argv[])
   dedup_sys.waitSysInitDone(&cproc);
 
   if (is_active) {
-    uint32_t total_page_unique_count = (((uint32_t) (hash_table_fullness * dedupSys::node_ht_size) + 15)/16) * 16;
-    uint32_t ne_read_pages;
+    size_t total_page_unique_count = (((uint32_t) (hash_table_fullness * dedupSys::node_ht_size) + 15)/16) * 16 * dedup_sys.node_count;
+    vector<uint32_t> ne_read_pages;
     vector<Instr> trace_instrs;
-    loadTrace(trace, trace_instrs, ne_read_pages, total_page_unique_count);
-    ne_read_pages = ((ne_read_pages + 15)/16) * 16; // Apparently has to be multiple of 16. No idea why
+    loadTrace(trace, ne_read_pages, trace_instrs);
     
     std::cout << "Config: "<< endl;
-    std::cout << "1. number of non-existent read pages to fill up: " << ne_read_pages << endl;
+    std::cout << "1. number of non-existent read pages to fill up: " << ne_read_pages.size() << endl;
     std::cout << "2. number of page to run benchmark: " << n_page << endl;
     std::cout << "3. number of pages in benchmark: " << total_page_unique_count << endl;
     
@@ -198,9 +197,12 @@ int main(int argc, char *argv[])
     assert(all_unique_page_buffer != NULL);
     assert(all_unique_page_sha3   != NULL);
     // get unique page data
-    int urand = open("/dev/urandom", O_RDONLY);
-    int res = read(urand, all_unique_page_buffer, total_page_unique_count * dedupSys::pg_size);
-    close(urand);
+    
+    string hash_filename(page_filename);
+    auto pos = hash_filename.find("pages");
+    hash_filename.replace(pos, 5, "hashes");
+    readFile(page_filename, all_unique_page_buffer, total_page_unique_count * dedupSys::pg_size);
+    readFile(hash_filename, all_unique_page_buffer, total_page_unique_count * 32);
 
     int* goldenPgIsExec = (int*) malloc(total_page_unique_count * sizeof(int));
     int* goldenPgRefCount = (int*) malloc(total_page_unique_count * sizeof(int));
@@ -209,7 +211,17 @@ int main(int argc, char *argv[])
 
     Context ctx{dedup_sys, cproc, all_unique_page_buffer, all_unique_page_sha3, verbose, sync_on, goldenPgIsExec, goldenPgRefCount, goldenPgIdx, output_dir, timeStamp};
 
-    initPages(ctx, ne_read_pages, total_page_unique_count - ne_read_pages);
+    stringstream outfile_name;
+    outfile_name << ctx.output_dir << "/resp_" << ctx.timeStamp.str() << "_step1.txt";
+    double time;
+    if (ne_read_pages.size() % 16 > 0) { // Number of pages needs to be multiple of 16
+      auto padding = 16 - (ne_read_pages.size() % 16);
+      cout << "Padding non-existent read page intialization with " << padding << " writes of page 0" << endl;
+      for (auto i = 0; i < padding; i++) { 
+        ne_read_pages.emplace_back(0);
+      }
+    }
+    modPages(ctx, WRITE, ne_read_pages.size(), 0, ne_read_pages, outfile_name, time);
 
     // Step 3: Run benchmark
     std::cout << endl << "Step3: start benchmarking" << endl;
@@ -223,9 +235,13 @@ int main(int argc, char *argv[])
         end++;
       }
       vector<Instr> instrs(trace_instrs.begin() + start, trace_instrs.begin() + end);
-      for (auto i = 0; i < page_count % 16; i++) {
-        instrs.push_back({READ, 0, {0}}); // Again need some padding for some reason
-        page_count++;
+      if (page_count % 16 > 0) { // Number of pages needs to be multiple of 16
+        auto padding = 16 - (page_count % 16);
+        cout << "Padding instructions with " << padding << " reads of page 0" << endl;
+        for (auto i = 0; i < padding; i++) {
+          instrs.push_back({READ, 0, {0}});
+          page_count++;
+        }
       }
       std::cout << endl << "Starting run " << i << " [" << start << ",  " <<  end << "]" << endl;
       std::cout << "Number of instructions: " << end - start << endl;
@@ -238,6 +254,8 @@ int main(int argc, char *argv[])
       total_page_count += page_count;
       start = end;
       i++;
+      cout << "kIOPS: " << ((double) page_count) / (time / 1000000) << endl;
+      cout << "GB/s: " << ((double) page_count * 4096) / time << endl;
     }
 
     auto total_time = std::accumulate(times_lst.begin(), times_lst.end(), (double) 0);

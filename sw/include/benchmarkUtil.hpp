@@ -237,4 +237,20 @@ bool initSHA3(Context &ctx, size_t total_page_unique_count) {
   return true;
 }
 
+void readFile(string filename, char *buffer, size_t size) {
+  int fd;
+  if ((fd = open(filename.c_str(), O_RDONLY)) < 0) {
+      cout << "Not possible to open input page file" << endl;
+  }
+  ssize_t status = 0;
+  off_t bytes_read = 0;
+  while (bytes_read < size && (status = read(fd, buffer + bytes_read, size - bytes_read)) > 0) {
+    bytes_read += status;
+  }
+  close(fd);
+  if (status < 0 || bytes_read < size) {
+    cout << "Error reading input page file with status " << status << " and " << bytes_read << " Bytes read out of " << size << " Bytes" << endl;
+  }
+}
+
 }

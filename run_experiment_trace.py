@@ -79,15 +79,16 @@ def analyze_results(hostnames, output_dir):
 
     # Print results
     print(time_results)
-    for command, passed_list in command_results.items():
-        all_passed = all(passed_list)
-        avg_time = sum(time_results[command]) / len(time_results[command])
-        print(f"############################################")
-        print(f"{command}")
-        print(f"- All pages passed: {all_passed} - Average time across hosts: {avg_time} ns")
-        for hostname, time in zip(hostnames, time_results[command]):
-            print(f"{hostname}: {time} ns")
-        print(f"############################################")
+    if time_results[0.]:
+        for command, passed_list in command_results.items():
+            all_passed = all(passed_list)
+            avg_time = sum(time_results[command]) / len(time_results[command])
+            print(f"############################################")
+            print(f"{command}")
+            print(f"- All pages passed: {all_passed} - Average time across hosts: {avg_time} ns")
+            for hostname, time in zip(hostnames, time_results[command]):
+                print(f"{hostname}: {time} ns")
+            print(f"############################################")
 
 def main():
     hostnames = ["alveo-u55c-01",
@@ -100,9 +101,9 @@ def main():
                  "alveo-u55c-08",
                  "alveo-u55c-09",
                  "alveo-u55c-10"] 
-    command = "cd " + str(os.getcwd()) + " && " + str(os.getcwd()) + "/sw/build/main -n 16384 -f 0.9921875 -s 1 -v 1 -t "
+    command = "cd " + str(os.getcwd()) + " && " + str(os.getcwd()) + "/sw/build/main -n 16384 -f 0.9921875 -s 1 -v 1 -p /mnt/scratch/jodann/dedup_data/data.pages -t "
 
-    for trace in ["web"]:
+    for trace in ["/mnt/scratch/jodann/dedup_data/web/web"]:
         for node_used in [10]:
             # Get current timestamp and create a directory
             timestamp = datetime.now().strftime("%Y_%m%d_%H%M_%S")

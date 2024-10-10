@@ -115,20 +115,7 @@ int main(int argc, char *argv[])
   assert(all_unique_page_sha3   != NULL);
   // get unique page data
 
-  int fd;
-  if ((fd = open(page_filename.c_str(), O_RDONLY)) < 0) {
-      cout << "Not possible to open input page file" << endl;
-  }
-  size_t total_bytes_to_read = total_page_unique_count * dedupSys::pg_size;
-  ssize_t status = 0;
-  off_t bytes_read = 0;
-  while (bytes_read < total_bytes_to_read && (status = read(fd, all_unique_page_buffer + bytes_read, total_bytes_to_read - bytes_read)) > 0) {
-    bytes_read += status;
-  }
-  close(fd);
-  if (status < 0 || bytes_read < total_bytes_to_read) {
-    cout << "Error reading input page file: " << status << endl;
-  }
+  readFile(page_filename, all_unique_page_buffer, total_page_unique_count * dedupSys::pg_size);
 
   int* goldenPgIsExec = (int*) malloc(total_page_unique_count * sizeof(int));
   int* goldenPgRefCount = (int*) malloc(total_page_unique_count * sizeof(int));
