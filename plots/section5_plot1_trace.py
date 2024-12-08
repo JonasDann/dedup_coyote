@@ -33,19 +33,15 @@ plt.rcParams.update({
 # Placeholder data
 rounds = 35
 cases = ['mail', 'web', 'homes']
-pages = [p * 16384 for p in list(range(rounds))]
+nodes = [1, 2, 4, 8, 10]
 
-kiops_1 = [
-0 for _ in list(range(rounds))
-]
+kiops_cpu {"web": 1396.41, "mail": 1407.39, "homes": 2130.32}
 
-kiops_2 = [
-2327.101, 2254.741, 2602.5270000000005, 3052.4439999999995, 2540.199, 2360.113, 2828.974, 3155.231, 3215.958, 3253.603, 3047.811, 3274.3860000000004, 3144.165, 3152.599, 3210.616, 3050.8480000000004, 2966.564, 2709.527, 2629.5970000000007, 3012.7840000000006, 3395.785, 3027.09, 3050.727, 3051.81, 3071.772, 3512.44, 2793.993, 2755.1040000000003, 2919.08, 3022.948, 2617.191, 1952.884, 2816.5190000000002, 3224.435
-]
+kiops_mail = [3413, (3669.45 + 3667.37) / 2, 0, 0, 0]
 
-kiops_3 = [
-0 for _ in list(range(rounds))
-]
+kiops_web = [3349.72, (3648.38 + 3651.18) / 2, 0, 0, 0]
+
+kiops_homes = [0 for _ in list(range(rounds))]
 
 # Number of cases
 n_cases = len(cases)
@@ -54,9 +50,9 @@ n_cases = len(cases)
 fig, ax = plt.subplots()
 
 # default color: ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
-line1, = plt.plot(pages, kiops_1, label=cases[0], marker='s', markersize = 10, zorder=3, linestyle='-', linewidth = 2)
-line2, = plt.plot(pages, kiops_2, label=cases[1], marker='d', markersize = 9, zorder=3, linestyle='-', linewidth = 2)
-line3, = plt.plot(pages, kiops_3, label=cases[2], marker='x', markersize = 8, zorder=3, markeredgewidth=2, linewidth = 2)
+line1, = plt.plot(nodes, kiops_mail, label=cases[0], marker='s', markersize = 10, zorder=3, linestyle='-', linewidth = 2)
+line2, = plt.plot(nodes, kiops_web, label=cases[1], marker='d', markersize = 9, zorder=3, linestyle='-', linewidth = 2)
+line3, = plt.plot(nodes, kiops_homes, label=cases[2], marker='x', markersize = 8, zorder=3, markeredgewidth=2, linewidth = 2)
 line1.set_clip_on(False)
 line2.set_clip_on(False)
 line3.set_clip_on(False)
@@ -71,9 +67,9 @@ line3.set_clip_on(False)
 # plt.text(1.2, 73, f"Only 2 Nodes in\nHW Baseline", fontsize = 9, rotation=0, rotation_mode='anchor', weight = 'bold', ha = 'left', va = 'bottom')
 
 # Adding labels and title
-ax.set_xlabel('Number of pages', fontsize = 9, weight = 'bold')
+ax.set_xlabel('Number of nodes', fontsize = 9, weight = 'bold')
 ax.set_ylabel('kIOPS', fontsize = 9, weight = 'bold')
-ax.set_xticks(pages)
+ax.set_xticks(nodes)
 # ax.tick_params(axis='x', which='both', length=0, width=0)  # Adjust length and width as needed
 # ax.set_xticklabels(cases)
 
