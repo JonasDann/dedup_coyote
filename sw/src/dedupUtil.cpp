@@ -18,10 +18,10 @@ namespace dedup {
 // data loading
 std::filesystem::path findLatestSubdirectory(const std::filesystem::path& directory) {
     std::filesystem::path latest_dir;
-    std::tm tm = {};
     std::chrono::system_clock::time_point latest_time;
 
     for (const auto& entry : std::filesystem::directory_iterator(directory)) {
+        std::tm tm{};
         if (entry.is_directory()) {
             std::istringstream ss(entry.path().filename().string());
             ss >> std::get_time(&tm, "%Y_%m%d_%H%M_%S");
