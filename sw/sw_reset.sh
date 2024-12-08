@@ -5,6 +5,7 @@ BUILD_DIR="${SCRIPT_DIR}/build"
 rm -rf ${BUILD_DIR}
 mkdir ${BUILD_DIR} && cd ${BUILD_DIR}
 /usr/bin/cmake ${SCRIPT_DIR} -DTARGET_DIR=${SCRIPT_DIR}/examples/dedup_sys_trace
+# /usr/bin/cmake ${SCRIPT_DIR} -DTARGET_DIR=${SCRIPT_DIR}/examples/cpu_baseline_trace
 # /usr/bin/cmake ${SCRIPT_DIR} -DTARGET_DIR=${SCRIPT_DIR}/examples/dedup_sys_write
 # /usr/bin/cmake ${SCRIPT_DIR} -DTARGET_DIR=${SCRIPT_DIR}/examples/cpu_baseline_no_compression
 # /usr/bin/cmake ${SCRIPT_DIR} -DTARGET_DIR=${SCRIPT_DIR}/examples/cpu_baseline_lookup_only

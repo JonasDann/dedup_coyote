@@ -24,9 +24,12 @@ endif()
 # Boost lib
 find_package(Boost COMPONENTS program_options REQUIRED)
 
+# set(OPENSSL_USE_STATIC_LIBS TRUE)
+find_package(OpenSSL REQUIRED)
+
 # Targets
 add_executable(${EXEC} ${SOURCES})
-target_link_libraries(${EXEC} ${Boost_LIBRARIES})
+target_link_libraries(${EXEC} ${Boost_LIBRARIES} OpenSSL::Crypto)
 
 # Run Reset Script
 add_custom_target(reset COMMAND ./hw_reset_local.sh  WORKING_DIRECTORY ../..)

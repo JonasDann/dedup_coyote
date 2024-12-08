@@ -169,15 +169,16 @@ bool modPages(Context &ctx, vector<Instr>::iterator instrs_begin, vector<Instr>:
   return check_res;
 }
 
-bool modPages(Context &ctx, OpCode opcode, uint32_t instr_count, uint32_t lba_offset, vector<uint32_t> &pg_idx_lst, stringstream &outfile_name, double &time, bool init_sha3 = false, bool validate = true) {
+bool modPages(Context &ctx, OpCode opcode, uint32_t instr_count, uint32_t lba_offset, vector<uint32_t>::iterator pg_idx_lst_begin, vector<uint32_t>::iterator pg_idx_lst_end, stringstream &outfile_name, double &time, bool init_sha3 = false, bool validate = true) {
+  auto pg_idx_lst_size = distance(pg_idx_lst_begin, pg_idx_lst_end);
   assert(instr_count > 0);
-  assert(pg_idx_lst.size() % instr_count == 0);
-  uint32_t instr_pg_count = pg_idx_lst.size() / instr_count;
+  assert(pg_idx_lst_size % instr_count == 0);
+  uint32_t instr_pg_count = pg_idx_lst_size / instr_count;
   vector<Instr> instrs(instr_count, Instr{opcode, 0, vector<uint32_t>(instr_pg_count)});
   for (size_t i = 0; i < instr_count; i++) {
     auto start = instr_pg_count * i;
     instrs[i].lba = lba_offset + start;
-    copy(pg_idx_lst.begin() + start, pg_idx_lst.begin() + start + instr_pg_count, instrs[i].pg_idx_lst.begin());
+    copy(pg_idx_lst_begin + start, pg_idx_lst_begin + start + instr_pg_count, instrs[i].pg_idx_lst.begin());
   }
   return modPages(ctx, instrs.begin(), instrs.end(), outfile_name, time, init_sha3, validate);
 }
@@ -187,7 +188,7 @@ bool modPages(Context &ctx, OpCode instr, uint32_t instr_count, uint32_t lba_off
   for (size_t i = 0; i < pg_count; i++) {
     pg_idx_lst.push_back(pg_idx_start + i);
   }
-  return modPages(ctx, instr, instr_count, lba_offset + pg_idx_start, pg_idx_lst, outfile_name, time, init_sha3);
+  return modPages(ctx, instr, instr_count, lba_offset + pg_idx_start, pg_idx_lst.begin(), pg_idx_lst.end(), outfile_name, time, init_sha3);
 }
 
 void initPages(Context &ctx, uint32_t initial_page_unique_count, uint32_t new_page_unique_count) {
@@ -256,6 +257,76 @@ void readFile(string filename, char *buffer, size_t size) {
   if (status < 0 || bytes_read < size) {
     cout << "Error reading input page file with status " << status << " and " << bytes_read << " Bytes read out of " << size << " Bytes" << endl;
   }
+}
+
+void loadTrace(string trace, vector<uint32_t> &ne_read_pages, vector<Instr> &instrs) {
+  string ne_read_filename(trace);
+  auto pos = ne_read_filename.find("trace");
+  ne_read_filename.replace(pos, 5, "ners");
+  std::ifstream nerf(ne_read_filename);
+  if (nerf.fail()) {
+    cout << "Error opening non-existent reads file " << ne_read_filename << endl;
+    return;
+  }
+
+  string line;
+  while (getline(nerf, line)) {
+    ne_read_pages.emplace_back(stoul(line));
+    if (stoul(line) == 80312) {
+      cout << "Missing line found" << endl;
+    }
+  }
+
+  nerf.close();
+  
+  std::ifstream f(trace);
+  if (f.fail()) {
+    cout << "Error opening trace file " << trace << endl;
+    return;
+  }
+
+  unordered_set<uint32_t> lba_set; // Keeps track of the used LBAs to check if there is a write to an existing LBA
+  uint32_t pos_start = 0;
+  uint32_t pos_end, col;
+  string token;
+  while (getline(f, line)) {
+    Instr instr;
+    col = 0;
+    pos_start = 0;
+    bool done = false;
+    while (!done) {
+      if (col < 3) {
+        pos_end = line.find(" ", pos_start);
+      } else {
+        pos_end = line.size();
+        done = true;
+      }
+      token = line.substr(pos_start, pos_end - pos_start);
+      if (col == 0) {
+        instr.lba = stoul(token);
+      } else if (col == 1) {
+        instr.opcode = (token == "W") ? WRITE : READ;
+      } else if (col == 2) {
+        instr.pg_idx_lst.emplace_back(stoul(token));
+      }
+      pos_start = pos_end + 1;
+      col++;
+    }
+    /*if (instr.opcode == WRITE) {
+      if (auto lba_idx = lba_set.find(instr.lba); lba_idx != lba_set.end()) { // If this is a write to an existing LBA // TODO This is currently not correct because it cannot be decided locally with a partitioned trace. This has to be moved to the trace partitioning
+        Instr erase_instr{ERASE, instr.lba, {instr.pg_idx_lst[0]}}; // We have to erase the old contents first
+        instrs.emplace_back(erase_instr);
+      }
+    }
+    if (instr.opcode == WRITE && instrs.size() > 0 && instrs.back().opcode == WRITE && instrs.back().lba + (instrs.back().pg_idx_lst.size()) * 8 == instr.lba) { // If this is a sequential write in the context of the previous instruction // TODO These do currently not work because the trace is striped during trace partitioning
+      instrs.back().pg_idx_lst.emplace_back(instr.pg_idx_lst[0]); // Add the current instructions page to the previous write
+    } else {
+      instrs.emplace_back(instr);
+    }*/
+    instrs.emplace_back(instr);
+    lba_set.insert(instr.lba);
+  }
+  f.close();
 }
 
 }
