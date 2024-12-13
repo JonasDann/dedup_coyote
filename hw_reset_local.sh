@@ -20,7 +20,7 @@ if [ $PROGRAM_FPGA -eq 1 ]; then
     source /tools/Xilinx/Vivado/2024.1/settings64.sh
   fi
   
-  ${CLI_PATH}/sgutil program vivado --bitstream ${SCRIPT_DIR}/hw/build/bitstreams/cyt_top.bit
+  ${CLI_PATH}/sgutil program vivado --bitstream ${SCRIPT_DIR}/hw/build_4KB_pages_32768_6FSM_BF/bitstreams/cyt_top.bit
 fi
 
 if [ $DRV_INSERT -eq 1 ]; then
@@ -31,7 +31,10 @@ if [ $DRV_INSERT -eq 1 ]; then
 
   echo "*** Loading driver..."
   echo " ** "
-  sudo rmmod coyote_drv
+  if lsmod | grep -q coyote_drv; then
+    echo " ** Removed driver before reinsertion"
+    sudo rmmod coyote_drv
+  fi
   sudo insmod ${SCRIPT_DIR}/driver/coyote_drv.ko ip_addr_q${QSFP_PORT}=${DEVICE_1_IP_ADDRESS_HEX_0} mac_addr_q${QSFP_PORT}=${DEVICE_1_MAC_ADDRESS_0}
 
   # We need this to add read and write permissions for everybody on the fpga device file

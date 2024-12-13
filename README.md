@@ -64,6 +64,9 @@ Current we are simulating network utilization, run `python3 simulate_network_uti
 CPU Baseline is adapted from dmdedup's hash table.
 They are under `sw/examples/cpu_baseline*`, run:
 ```Bash
-cd sw/examples && ./sw_reset.sh
+cd sw && ./sw_reset.sh
 ./build/main -x xx
 ```
+
+### Trace data set
+Download the trace data sets from http://iotta.snia.org/traces/block-io/391?n=10&page=1. Copy the files into a folder `dedup_data` that is next to the `dedup_coyote` folder. Each trace gets their own sub folder. You may have to rename the `*.blkparse` files so they are sorted correctly (prepend 0 for single digit index numbers). Then partition with `python3 partition_trace.py <trace> <number of partitions>` (benchmarks used 1, 2, 4, 8, and 10 partitions). The maximum number of partitions is assumed to be 10 since that matches the number of U55C nodes in the HACC cluster. You also need to generate a `data.pages` file with the page data and a `data.hashes` file containing the corresponding hashes. These are read by the trace benchmark to save on regenerating random data and the corresponding hashes every time the benchmark is executed.

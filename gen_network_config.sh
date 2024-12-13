@@ -32,7 +32,7 @@ if [ $GEN_ROUTING_TABLE -eq 1 ]; then
   echo "*** Generating Routing Table..."
   echo " ** "
   # python3 routing_table_gen.py --hostlist ${hostlist[@]} --mode hop_test --hop-count 3
-	python3 routing_table_gen.py --hostlist ${hostlist[@]} --mode equal_divide
+	python3 routing_table_gen.py --hostlist ${hostlist[@]} --mode all2all
 fi
 
 ##

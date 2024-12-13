@@ -103,26 +103,23 @@ def main():
                  "alveo-u55c-10"] 
     command = "cd " + str(os.getcwd()) + " && " + str(os.getcwd()) + "/sw/build/main -n 16384 -f 0.9921875 -s 1 -v 1 -p /mnt/scratch/jodann/dedup_data/data.pages -t "
 
-    for trace in ["/mnt/scratch/jodann/dedup_data/web/web"]:
-        for node_used in [10]:
+    for trace_name in ["mail"]:
+        for active_nodes in [[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]]:
             # Get current timestamp and create a directory
             timestamp = datetime.now().strftime("%Y_%m%d_%H%M_%S")
             output_dir = f"./experiment_tmp/trace/{timestamp}"
             os.makedirs(output_dir, exist_ok=True)
-            print(f"start execution: {node_used=}, {output_dir=}")
+            print(f"start execution: {len(active_nodes)=}, {output_dir=}")
             # Using ThreadPoolExecutor to run commands concurrently
-            with ThreadPoolExecutor(max_workers=node_used) as executor:
-                futures = [executor.submit(run_command_on_server, hostname, command + trace + ".trace." + str(i), output_dir, hostname == hostnames[0]) for i, hostname in enumerate(hostnames)]
+            trace_path = "/mnt/scratch/jodann/dedup_data/" + trace_name + "/partitioned_" + str(len(active_nodes)) + "/" + trace_name + ".trace."
+            with ThreadPoolExecutor(max_workers=len(active_nodes)) as executor:
+                futures = [executor.submit(run_command_on_server, hostnames[num - 1], command + trace_path + str(i), output_dir, i == 0) for i, num in enumerate(active_nodes)]
 
             # Waiting for all futures to complete
             for future in futures:
                 future.result()
-            print(f"end execution: {node_used=}, {output_dir=}, analyzing results...")
-            analyze_results(hostnames, output_dir)
-
-            for count_down in range(70, 0, -10):
-                print(f"waiting, {count_down} seconds remaining ...")
-                time.sleep(10)
+            print(f"end execution: {len(active_nodes)=}, {output_dir=}, analyzing results...")
+            # analyze_results(hostnames, output_dir)
 
 if __name__ == "__main__":
     main()
