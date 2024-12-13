@@ -8,7 +8,7 @@ plt.rcParams.update({
   'font.weight'      : 'bold', 
   'figure.facecolor' : 'w',
   'figure.dpi'       : 500,
-  'figure.figsize'   : (6,3),
+  'figure.figsize'   : (6,2.5),
   # basic properties
   'axes.linewidth'   : 1,
   'xtick.top'        : True,
@@ -32,7 +32,7 @@ plt.rcParams.update({
 
 # Placeholder data
 rounds = 35
-cases = ['mail', 'web', 'homes']
+cases = ['StreamDedup, mail', 'StreamDedup, web', 'StreamDedup, homes']
 nodes = [1, 2, 4, 8, 10]
 
 kiops_cpu = {"web": 1396.41, "mail": 1407.39, "homes": 2130.32}
@@ -50,38 +50,45 @@ n_cases = len(cases)
 fig, ax = plt.subplots()
 
 # default color: ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
-line1, = plt.plot(nodes, kiops_mail, label=cases[0], marker='s', markersize = 10, zorder=3, linestyle='-', linewidth = 2)
-line2, = plt.plot(nodes, kiops_web, label=cases[1], marker='d', markersize = 9, zorder=3, linestyle='-', linewidth = 2)
-line3, = plt.plot(nodes, kiops_homes, label=cases[2], marker='x', markersize = 8, zorder=3, markeredgewidth=2, linewidth = 2)
+line1, = plt.plot(nodes, kiops_mail, label=cases[0], marker='s', markersize = 10, zorder=3, linestyle='-', linewidth = 2, color = '#cc660b')
+line2, = plt.plot([1], [kiops_cpu["mail"]], label="SW baseline, mail", marker='s', markersize = 10, zorder=3, linestyle='-', linewidth = 2, color = "#14517d")
+line3, = plt.plot(nodes, kiops_web, label=cases[1], marker='d', markersize = 9, zorder=3, linestyle='-', linewidth = 2, color = '#ff7f0e')
+line4, = plt.plot([1], [kiops_cpu["web"]], label="SW baseline, web", marker='d', markersize = 9, zorder=3, linestyle='-', linewidth = 2, color = "#1f77b4")
+line5, = plt.plot(nodes, kiops_homes, label=cases[2], marker='x', markersize = 8, zorder=3, markeredgewidth=2, linewidth = 2, color = '#ffbf80')
+line6, = plt.plot([1], [kiops_cpu["homes"]], label="SW baseline, homes", marker='x', markersize = 8, zorder=3, markeredgewidth=2, linewidth = 2, color = "#40abf5")
 line1.set_clip_on(False)
 line2.set_clip_on(False)
 line3.set_clip_on(False)
+line4.set_clip_on(False)
+line5.set_clip_on(False)
+line6.set_clip_on(False)
 
 # line for 12.7
 # position_127GB = 124.3
 # plt.axhline(y = position_127GB, color = 'r', linestyle = 'dashed', linewidth = 1, zorder = 5)
 # plt.text(5.5, position_127GB*1.02, f"124.3 GB/s", fontsize = 8, rotation=0, rotation_mode='anchor', weight = 'bold', ha = 'center', va = 'bottom')
 
-# arrow_config = dict(facecolor='black', shrink=0.05, width=1, headwidth=4, headlength=5, linewidth=0.5)
-# ax.annotate(f"", xy=(2, 35), xytext=(2, 70), fontsize = 8, arrowprops=arrow_config, ha='left', va='bottom')
-# plt.text(1.2, 73, f"Only 2 Nodes in\nHW Baseline", fontsize = 9, rotation=0, rotation_mode='anchor', weight = 'bold', ha = 'left', va = 'bottom')
+arrow_config = dict(facecolor='black', shrink=0.05, width=1, headwidth=4, headlength=5, linewidth=0.5)
+ax.annotate(f"", xy=(1.25, 1750), xytext=(2, 1750), fontsize = 8, arrowprops=arrow_config, ha='left', va='bottom')
+plt.text(2.1, 1750, f"Only 1 node in SW baseline", fontsize = 9, rotation=0, rotation_mode='anchor', weight = 'bold', ha = 'left', va = 'center')
 
 # Adding labels and title
 ax.set_xlabel('Number of nodes', fontsize = 9, weight = 'bold')
 ax.set_ylabel('kIOPS', fontsize = 9, weight = 'bold')
-ax.set_xticks(nodes)
+ax.set_xticks(list(range(11)))
 # ax.tick_params(axis='x', which='both', length=0, width=0)  # Adjust length and width as needed
 # ax.set_xticklabels(cases)
 
 legend = plt.legend()
-ax.legend(loc='upper center', bbox_to_anchor=(0.5, 1.3), ncol=1)
+ax.legend(loc='upper center', bbox_to_anchor=(0.5, 1.35), ncol=3)
 legend.get_frame().set_linewidth(1)
 
-#plt.xlim([1, 10])
+plt.xlim([1, 10])
 #plt.ylim([0, 150])
+plt.yscale("log")
 
 # Adjusting the layout
-plt.subplots_adjust(left=0.1, right=0.95, top=0.8, bottom=0.17)
+plt.subplots_adjust(left=0.105, right=0.905, top=0.79, bottom=0.17)
 # Alternatively
 # plt.tight_layout()
 
@@ -93,4 +100,4 @@ def save_plot(directory, filename):
     plt.savefig(f"{directory}/{filename}.pdf")
 
 # Example usage (replace 'your_directory_path' with the actual path)
-save_plot('./section5', 'plot1_trace')
+save_plot('./plots/section5', 'plot1_trace')
