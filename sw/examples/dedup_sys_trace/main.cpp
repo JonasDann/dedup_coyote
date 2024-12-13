@@ -32,73 +32,6 @@ using namespace std;
 using namespace fpga;
 using namespace dedup;
 
-void loadTrace(string trace, vector<uint32_t> &ne_read_pages, vector<Instr> &instrs) {
-  string ne_read_filename(trace);
-  auto pos = ne_read_filename.find("trace");
-  ne_read_filename.replace(pos, 5, "nereads");
-  std::ifstream nerf(ne_read_filename);
-  if (nerf.fail()) {
-    cout << "Error opening non-existent reads file " << trace << endl;
-    return;
-  }
-
-  string line;
-  while (getline(nerf, line)) {
-    ne_read_pages.emplace_back(stoul(line));
-  }
-
-  nerf.close();
-  
-  std::ifstream f(trace);
-  if (f.fail()) {
-    cout << "Error opening trace file " << trace << endl;
-    return;
-  }
-
-  unordered_set<uint32_t> lba_set; // Keeps track of the used LBAs to check if there is a write to an existing LBA
-  uint32_t pos_start = 0;
-  uint32_t pos_end, col;
-  string token;
-  while (getline(f, line)) {
-    Instr instr;
-    col = 0;
-    pos_start = 0;
-    bool done = false;
-    while (!done) {
-      if (col < 3) {
-        pos_end = line.find(" ", pos_start);
-      } else {
-        pos_end = line.size();
-        done = true;
-      }
-      token = line.substr(pos_start, pos_end - pos_start);
-      if (col == 0) {
-        instr.lba = stoul(token);
-      } else if (col == 1) {
-        instr.opcode = (token == "W") ? WRITE : READ;
-      } else if (col == 2) {
-        instr.pg_idx_lst.emplace_back(stoul(token));
-      }
-      pos_start = pos_end + 1;
-      col++;
-    }
-    /*if (instr.opcode == WRITE) {
-      if (auto lba_idx = lba_set.find(instr.lba); lba_idx != lba_set.end()) { // If this is a write to an existing LBA // TODO This is currently not correct because it cannot be decided locally with a partitioned trace. This has to be moved to the trace partitioning
-        Instr erase_instr{ERASE, instr.lba, {instr.pg_idx_lst[0]}}; // We have to erase the old contents first
-        instrs.emplace_back(erase_instr);
-      }
-    }
-    if (instr.opcode == WRITE && instrs.size() > 0 && instrs.back().opcode == WRITE && instrs.back().lba + (instrs.back().pg_idx_lst.size()) * 8 == instr.lba) { // If this is a sequential write in the context of the previous instruction // TODO These do currently not work because the trace is striped during trace partitioning
-      instrs.back().pg_idx_lst.emplace_back(instr.pg_idx_lst[0]); // Add the current instructions page to the previous write
-    } else {
-      instrs.emplace_back(instr);
-    }*/
-    instrs.emplace_back(instr);
-    lba_set.insert(instr.lba);
-  }
-  f.close();
-}
-
 /**
  * @brief Throughput and latency tests, read and write
  * 
@@ -178,17 +111,18 @@ int main(int argc, char *argv[])
   dedup_sys.setRoutingTable(&cproc);
   // confirm the init is done
   dedup_sys.waitSysInitDone(&cproc);
+  dedup_sys.syncBarrier();
 
   if (is_active) {
-    size_t total_page_unique_count = (((uint32_t) (hash_table_fullness * dedupSys::node_ht_size) + 15)/16) * 16 * dedup_sys.node_count;
+    size_t total_page_unique_count = (((uint32_t) (hash_table_fullness * dedupSys::node_ht_size) + 15)/16) * 16 * 1;
     vector<uint32_t> ne_read_pages;
     vector<Instr> trace_instrs;
     loadTrace(trace, ne_read_pages, trace_instrs);
     
     std::cout << "Config: "<< endl;
     std::cout << "1. number of non-existent read pages to fill up: " << ne_read_pages.size() << endl;
-    std::cout << "2. number of page to run benchmark: " << n_page << endl;
-    std::cout << "3. number of pages in benchmark: " << total_page_unique_count << endl;
+    std::cout << "2. number of pages per round: " << n_page << endl;
+    std::cout << "3. total number of pages in benchmark: " << total_page_unique_count << endl;
     
     // Step 1: Insert all initial and new pages, get SHA3
     std::cout << endl << "Step1: get all page SHA3, total unique page count: "<< total_page_unique_count << endl;
@@ -203,7 +137,7 @@ int main(int argc, char *argv[])
     auto pos = hash_filename.find("pages");
     hash_filename.replace(pos, 5, "hashes");
     readFile(page_filename, all_unique_page_buffer, total_page_unique_count * dedupSys::pg_size);
-    readFile(hash_filename, all_unique_page_buffer, total_page_unique_count * 32);
+    readFile(hash_filename, (char *) all_unique_page_sha3, total_page_unique_count * 32);
 
     int* goldenPgIsExec = (int*) malloc(total_page_unique_count * sizeof(int));
     int* goldenPgRefCount = (int*) malloc(total_page_unique_count * sizeof(int));
@@ -222,7 +156,17 @@ int main(int argc, char *argv[])
         ne_read_pages.emplace_back(0);
       }
     }
-    modPages(ctx, WRITE, ne_read_pages.size(), 0, ne_read_pages, outfile_name, time, false, false);
+    size_t huge_pg_per_round = 32;
+    uint32_t n_insertion_round = (ne_read_pages.size() + huge_pg_per_round * dedupSys::pg_per_huge_pg - 1) / (huge_pg_per_round * dedupSys::pg_per_huge_pg);
+    std::cout << "Insert all non-existent read pages in "<< n_insertion_round << " rounds"<< endl;
+    for (int insertion_round_idx = 0; insertion_round_idx < n_insertion_round; insertion_round_idx++) {
+      uint32_t pg_idx_start = insertion_round_idx * huge_pg_per_round * dedupSys::pg_per_huge_pg;
+      uint32_t pg_idx_end = pg_idx_start + huge_pg_per_round * dedupSys::pg_per_huge_pg;
+      pg_idx_end = (pg_idx_end > ne_read_pages.size()) ? ne_read_pages.size() : pg_idx_end;
+      uint32_t pg_idx_count = pg_idx_end - pg_idx_start;
+      std::cout << "Round " << insertion_round_idx << endl;
+      modPages(ctx, WRITE, pg_idx_count, 0, ne_read_pages.begin() + pg_idx_start, ne_read_pages.begin() + pg_idx_end, outfile_name, time, false, false);
+    }
     dedup_sys.syncBarrier();
 
     // Step 3: Run benchmark
@@ -257,18 +201,18 @@ int main(int argc, char *argv[])
       start = end;
       i++;
       cout << "kIOPS: " << ((double) page_count) / (time / 1000000) << endl;
-      cout << "GB/s: " << ((double) page_count * 4096) / time << endl;
+      cout << "GB/s: " << ((double) page_count * dedupSys::pg_size) / time << endl;
     }
 
     auto total_time = std::accumulate(times_lst.begin(), times_lst.end(), (double) 0);
     std::cout << endl << "benchmarking done, avg time used: " << vctr_avg(times_lst) << " ns" << endl;
     cout << "total time used for " << trace_instrs.size() << " instructions: " << total_time << " ns" << endl;
     cout << "kIOPS: " << ((double) total_page_count) / (total_time / 1000000) << endl;
-    cout << "GB/s: " << ((double) total_page_count * 4096) / total_time << endl;
+    cout << "GB/s: " << ((double) total_page_count * dedupSys::pg_size) / total_time << endl;
 
     dedup_sys.syncBarrier();
 
-    // TODO Cleanupo
+    // TODO Cleanup
     //std::cout << endl << "Step4: clean up all remaining pages" << endl;
     //if (initial_page_unique_count >= 0) {
     //  std::stringstream outfile_name;

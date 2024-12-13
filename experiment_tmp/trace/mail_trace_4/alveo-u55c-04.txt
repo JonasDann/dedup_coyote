@@ -1,0 +1,160 @@
+execution: cd /pub/scratch/jodann/dedup_coyote && /pub/scratch/jodann/dedup_coyote/sw/build/main -n 16384 -f 0.9921875 -s 1 -v 1 -p /mnt/scratch/jodann/dedup_data/data.pages -t /mnt/scratch/jodann/dedup_data/mail/partitioned_4/mail.trace.2
+Got node ip from file: "/pub/scratch/jodann/dedup_coyote/server_ip.csv"
+Latest config under: "/pub/scratch/jodann/dedup_coyote/rdma_connection/2024_1208_0131_26"
+Got routing table from file: "/pub/scratch/jodann/dedup_coyote/rdma_connection/2024_1208_0131_26/local_config_2_alveo-u55c-04.csv"
+Got m2s rdma connections from file: "/pub/scratch/jodann/dedup_coyote/rdma_connection/2024_1208_0131_26/rdma_m2s_2_alveo-u55c-04.csv"
+Got s2m rdma connections from file: "/pub/scratch/jodann/dedup_coyote/rdma_connection/2024_1208_0131_26/rdma_s2m_2_alveo-u55c-04.csv"
+Queue pair created, qpid: 8
+Queue pair created, qpid: 7
+Queue pair created, qpid: 6
+Queue pair created, qpid: 2
+Queue pair created, qpid: 3
+Queue pair created, qpid: 10
+Server side started ...
+Successfully started listening to port: 8848, in try: 0/5
+Client side started ...
+Connect to alveo-u55c-06 try: 0/5. Error: Could not connect to master: 10.253.74.86:8848
+Connect to alveo-u55c-06 try: 1/5. Error: Could not connect to master: 10.253.74.86:8848
+Connect to alveo-u55c-06 try: 2/5. Error: Could not connect to master: 10.253.74.86:8848
+Connect to alveo-u55c-06 try: 3/5. Error: Could not connect to master: 10.253.74.86:8848
+Successfully connected to alveo-u55c-06: 10.253.74.86: 8848, in try: 4/5
+Successfully connected to alveo-u55c-02: 10.253.74.70: 8848, in try: 0/5
+Successfully connected to alveo-u55c-01: 10.253.74.66: 8848, in try: 0/5
+Master side QP exchange started ...
+Slave side exchange started ...Slave side exchange started ...
+
+Slave side exchange started ...
+Qpair ID: 8
+Local : QPN 0x000000, PSN 0xda2f06, VADDR 00007fb66a600000, SIZE 00200000, IP 0x0afd4a50,
+Remote: QPN 0x000004, PSN 0xa6306c, VADDR 00007f9118a00000, SIZE 00200000, IP 0x0afd4a44,
+Qpair ID: 2
+Local : QPN 0x000003, PSN 0xda2f06, VADDR 00007fb66a000000, SIZE 00200000, IP 0x0afd4a50,
+Remote: QPN 0x000001, PSN 0xa6306c, VADDR 00007f9119000000, SIZE 00200000, IP 0x0afd4a44,
+Qpair ID: 7
+Local : QPN 0x000001, PSN 0xda2f06, VADDR 00007fb66a400000, SIZE 00200000, IP 0x0afd4a50,
+Remote: QPN 0x000004, PSN 0x988429, VADDR 00007f0690400000, SIZE 00200000, IP 0x0afd4a48,
+Qpair ID: 3
+Local : QPN 0x000004, PSN 0xda2f06, VADDR 00007fb669e00000, SIZE 00200000, IP 0x0afd4a50,
+Remote: QPN 0x000001, PSN 0x988429, VADDR 00007f0690c00000, SIZE 00200000, IP 0x0afd4a48,
+Qpair ID: 6
+Local : QPN 0x000002, PSN 0xda2f06, VADDR 00007fb66a200000, SIZE 00200000, IP 0x0afd4a50,
+Remote: QPN 0x000005, PSN 0x6bc124, VADDR 00007fb49d000000, SIZE 00200000, IP 0x0afd4a58,
+Qpair ID: 10
+Local : QPN 0x000005, PSN 0xda2f06, VADDR 00007fb669c00000, SIZE 00200000, IP 0x0afd4a50,
+Remote: QPN 0x000002, PSN 0x6bc124, VADDR 00007fb49d600000, SIZE 00200000, IP 0x0afd4a58,
+Directory already exists or cannot be created: /pub/scratch/jodann/dedup_coyote/sw/examples/dedup_sys_trace/page_resp/alveo-u55c-04
+
+Step0: system init
+System was initialized, no op
+Config: 
+1. number of non-existent read pages to fill up: 43990
+2. number of pages per round: 16384
+3. total number of pages in benchmark: 260096
+
+Step1: get all page SHA3, total unique page count: 260096
+Preparing unique page data
+Padding non-existent read page intialization with 10 writes of page 0
+Insert all non-existent read pages in 3 rounds
+Round 0
+Start execution
+time used: 5.37455e+06ns
+read page count: 16640/16640
+write resp count: 16384/16384
+all page passed?: True
+Round 1
+Start execution
+time used: 5.37273e+06ns
+read page count: 16640/16640
+write resp count: 16384/16384
+all page passed?: True
+Round 2
+Start execution
+time used: 3.69146e+06ns
+read page count: 11408/11408
+write resp count: 11232/11232
+all page passed?: True
+
+Step3: start benchmarking
+
+Starting run 0 [0,  16384]
+Number of instructions: 16384
+Number of pages: 16384
+Start execution
+time used: 3.20362e+06ns
+read page count: 5467/5467
+write resp count: 16384/16384
+all page passed?: True
+kIOPS: 5114.21
+GB/s: 20.9478
+
+Starting run 1 [16384,  32768]
+Number of instructions: 16384
+Number of pages: 16384
+Start execution
+time used: 5.19922e+06ns
+read page count: 15968/15968
+write resp count: 16384/16384
+all page passed?: True
+kIOPS: 3151.24
+GB/s: 12.9075
+
+Starting run 2 [32768,  49152]
+Number of instructions: 16384
+Number of pages: 16384
+Start execution
+time used: 3.70467e+06ns
+read page count: 9781/9781
+write resp count: 16384/16384
+all page passed?: True
+kIOPS: 4422.53
+GB/s: 18.1147
+
+Starting run 3 [49152,  65536]
+Number of instructions: 16384
+Number of pages: 16384
+Start execution
+time used: 3.5236e+06ns
+read page count: 9106/9106
+write resp count: 16384/16384
+all page passed?: True
+kIOPS: 4649.78
+GB/s: 19.0455
+
+Starting run 4 [65536,  81920]
+Number of instructions: 16384
+Number of pages: 16384
+Start execution
+time used: 4.2246e+06ns
+read page count: 11995/11995
+write resp count: 16384/16384
+all page passed?: True
+kIOPS: 3878.24
+GB/s: 15.8853
+
+Starting run 5 [81920,  98304]
+Number of instructions: 16384
+Number of pages: 16384
+Start execution
+time used: 3.62262e+06ns
+read page count: 9218/9218
+write resp count: 16384/16384
+all page passed?: True
+kIOPS: 4522.69
+GB/s: 18.5249
+Padding instructions with 6 reads of page 0
+
+Starting run 6 [98304,  104170]
+Number of instructions: 5866
+Number of pages: 5872
+Start execution
+time used: 445097ns
+read page count: 137/137
+write resp count: 5872/5872
+all page passed?: True
+kIOPS: 13192.6
+GB/s: 54.037
+
+benchmarking done, avg time used: 3.41763e+06 ns
+total time used for 104170 instructions: 2.39234e+07 ns
+kIOPS: 4354.56
+GB/s: 17.8363

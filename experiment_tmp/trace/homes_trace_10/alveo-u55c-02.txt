@@ -1,0 +1,360 @@
+execution: cd /pub/scratch/jodann/dedup_coyote && /pub/scratch/jodann/dedup_coyote/sw/build/main -n 16384 -f 0.9921875 -s 1 -v 1 -p /mnt/scratch/jodann/dedup_data/data.pages -t /mnt/scratch/jodann/dedup_data/homes/homes.trace.1
+Got node ip from file: "/pub/scratch/jodann/dedup_coyote/server_ip.csv"
+Latest config under: "/pub/scratch/jodann/dedup_coyote/rdma_connection/2024_1010_1358_56"
+Got routing table from file: "/pub/scratch/jodann/dedup_coyote/rdma_connection/2024_1010_1358_56/local_config_1_alveo-u55c-02.csv"
+Got m2s rdma connections from file: "/pub/scratch/jodann/dedup_coyote/rdma_connection/2024_1010_1358_56/rdma_m2s_1_alveo-u55c-02.csv"
+Got s2m rdma connections from file: "/pub/scratch/jodann/dedup_coyote/rdma_connection/2024_1010_1358_56/rdma_s2m_1_alveo-u55c-02.csv"
+Queue pair created, qpid: 7
+Queue pair created, qpid: 6
+Queue pair created, qpid: 8
+Queue pair created, qpid: 10
+Queue pair created, qpid: 11
+Queue pair created, qpid: 9
+Queue pair created, qpid: 0
+Queue pair created, qpid: 13
+Queue pair created, qpid: 21
+Queue pair created, qpid: 35
+Queue pair created, qpid: 46
+Queue pair created, qpid: 56
+Server side started ...
+Successfully started listening to port: 8848, in try: 0/5
+Client side started ...
+Successfully connected to alveo-u55c-09: 10.253.74.98: 8848, in try: 0/5
+Successfully connected to alveo-u55c-06: 10.253.74.86: 8848, in try: 0/5
+Successfully connected to alveo-u55c-05: 10.253.74.82: 8848, in try: 0/5
+Successfully connected to alveo-u55c-07: 10.253.74.90: 8848, in try: 0/5
+Successfully connected to alveo-u55c-04: 10.253.74.78: 8848, in try: 0/5
+Successfully connected to alveo-u55c-10: 10.253.74.102: 8848, in try: 0/5
+Successfully connected to alveo-u55c-03: 10.253.74.74: 8848, in try: 0/5
+Successfully connected to alveo-u55c-08: 10.253.74.94: 8848, in try: 0/5
+Successfully connected to alveo-u55c-01: 10.253.74.66: 8848, in try: 0/5
+Master side QP exchange started ...
+Slave side exchange started ...
+Slave side exchange started ...
+Slave side exchange started ...
+Slave side exchange started ...Slave side exchange started ...Slave side exchange started ...
+
+
+Qpair ID: Qpair ID: 3521Qpair ID: 
+
+Local : QPN 0x000008, PSN 0x7e1c60, VADDR 00007f35cfe00000, SIZE 00200000, IP 0x0afd4a48,
+Remote: QPN 0x000000, PSN 0xd56141, VADDR 00007f3c12c00000, SIZE 00200000, IP 0x0afd4a50,
+Local : QPN 0x000009, PSN 0x7e1c60, VADDR 00007f35cfc00000, SIZE 00200000, IP 0x0afd4a48,
+13Qpair ID: 46
+Local : QPN 0x00000a, PSN 0x7e1c60, VADDR 00007f35cfa00000, SIZE 00200000, IP 0x0afd4a48,
+Remote: QPN 0x000000, PSN 0xcc1606, VADDR 00007fc6a7400000, SIZE 00200000, IP 0x0afd4a60,
+Remote: QPN 0x000000, PSN 0x61caac, VADDR 00007f4a49600000, SIZE 00200000, IP 0x0afd4a58,
+
+Local : QPN 0x000007, PSN 0x7e1c60, VADDR 00007f35d0200000, SIZE 00200000, IP 0x0afd4a48,
+Remote: QPN 0x000001, PSN 0x09a1d1, VADDR 00007f0066400000, SIZE 00200000, IP 0x0afd4a4c,
+Qpair ID: 7
+Local : QPN 0x000000, PSN 0x7e1c60, VADDR 00007f35d1200000, SIZE 00200000, IP 0x0afd4a48,
+Remote: QPN 0x000006, PSN 0x7881ad, VADDR 00007fc2af200000, SIZE 00200000, IP 0x0afd4a44,
+Qpair ID: 0
+Local : QPN 0x000006, PSN 0x7e1c60, VADDR 00007f35d0400000, SIZE 00200000, IP 0x0afd4a48,
+Remote: QPN 0x000000, PSN 0x7881ad, VADDR 00007fc2b0000000, SIZE 00200000, IP 0x0afd4a44,
+Qpair ID: 56
+Local : QPN 0x00000b, PSN 0x7e1c60, VADDR 00007f35cf800000, SIZE 00200000, IP 0x0afd4a48,
+Remote: QPN 0x000001, PSN 0x51f14e, VADDR 00007f077b200000, SIZE 00200000, IP 0x0afd4a68,
+Qpair ID: 6
+Local : QPN 0x000001, PSN 0x7e1c60, VADDR 00007f35d0e00000, SIZE 00200000, IP 0x0afd4a48,
+Remote: QPN 0x000007, PSN 0x09a1d1, VADDR 00007f0065600000, SIZE 00200000, IP 0x0afd4a4c,
+Qpair ID: 8
+Local : QPN 0x000002, PSN 0x7e1c60, VADDR 00007f35d0c00000, SIZE 00200000, IP 0x0afd4a48,
+Remote: QPN 0x000006, PSN 0xd56141, VADDR 00007f3c11e00000, SIZE 00200000, IP 0x0afd4a50,
+Qpair ID: 10
+Local : QPN 0x000003, PSN 0x7e1c60, VADDR 00007f35d0a00000, SIZE 00200000, IP 0x0afd4a48,
+Remote: QPN 0x000006, PSN 0x61caac, VADDR 00007f4a48800000, SIZE 00200000, IP 0x0afd4a58,
+Qpair ID: 11
+Local : QPN 0x000004, PSN 0x7e1c60, VADDR 00007f35d0800000, SIZE 00200000, IP 0x0afd4a48,
+Remote: QPN 0x000006, PSN 0xcc1606, VADDR 00007fc6a6600000, SIZE 00200000, IP 0x0afd4a60,
+Qpair ID: 9
+Local : QPN 0x000005, PSN 0x7e1c60, VADDR 00007f35d0600000, SIZE 00200000, IP 0x0afd4a48,
+Remote: QPN 0x000007, PSN 0x51f14e, VADDR 00007f077a400000, SIZE 00200000, IP 0x0afd4a68,
+Directory already exists or cannot be created: /pub/scratch/jodann/dedup_coyote/sw/examples/dedup_sys_trace/page_resp/alveo-u55c-02
+
+Step0: system init
+System was not initialized, start initialization process
+Waiting for HashTable header initialization, sleep 1 second...
+Config: 
+1. number of non-existent read pages to fill up: 19498
+2. number of page to run benchmark: 16384
+3. number of pages in benchmark: 2600960
+
+Step1: get all page SHA3, total unique page count: 2600960
+Preparing unique page data
+Padding non-existent read page intialization with 6 writes of page 0
+insert all non-existent read pages, in 2 rounds
+round 0
+Start execution
+time used: 5.37745e+06ns
+read page count: 16640/16640
+write resp count: 16384/16384
+all page passed?: True
+round 1
+Start execution
+time used: 1.04614e+06ns
+read page count: 3169/3169
+write resp count: 3120/3120
+all page passed?: True
+
+Step3: start benchmarking
+
+Starting run 0 [0,  16384]
+Number of instructions: 16384
+Number of pages: 16384
+Start execution
+time used: 6.03155e+06ns
+read page count: 15677/15677
+write resp count: 16384/16384
+all page passed?: True
+kIOPS: 2716.38
+GB/s: 11.1263
+
+Starting run 1 [16384,  32768]
+Number of instructions: 16384
+Number of pages: 16384
+Start execution
+time used: 8.55955e+06ns
+read page count: 15784/15784
+write resp count: 16384/16384
+all page passed?: True
+kIOPS: 1914.12
+GB/s: 7.84023
+
+Starting run 2 [32768,  49152]
+Number of instructions: 16384
+Number of pages: 16384
+Start execution
+time used: 7.78512e+06ns
+read page count: 13251/13251
+write resp count: 16384/16384
+all page passed?: True
+kIOPS: 2104.53
+GB/s: 8.62014
+
+Starting run 3 [49152,  65536]
+Number of instructions: 16384
+Number of pages: 16384
+Start execution
+time used: 5.57003e+06ns
+read page count: 14433/14433
+write resp count: 16384/16384
+all page passed?: True
+kIOPS: 2941.45
+GB/s: 12.0482
+
+Starting run 4 [65536,  81920]
+Number of instructions: 16384
+Number of pages: 16384
+Start execution
+time used: 5.09908e+06ns
+read page count: 14483/14483
+write resp count: 16384/16384
+all page passed?: True
+kIOPS: 3213.13
+GB/s: 13.161
+
+Starting run 5 [81920,  98304]
+Number of instructions: 16384
+Number of pages: 16384
+Start execution
+time used: 6.82368e+06ns
+read page count: 14856/14856
+write resp count: 16384/16384
+all page passed?: True
+kIOPS: 2401.05
+GB/s: 9.83471
+
+Starting run 6 [98304,  114688]
+Number of instructions: 16384
+Number of pages: 16384
+Start execution
+time used: 5.51222e+06ns
+read page count: 16150/16150
+write resp count: 16384/16384
+all page passed?: True
+kIOPS: 2972.31
+GB/s: 12.1746
+
+Starting run 7 [114688,  131072]
+Number of instructions: 16384
+Number of pages: 16384
+Start execution
+time used: 5.25483e+06ns
+read page count: 16261/16261
+write resp count: 16384/16384
+all page passed?: True
+kIOPS: 3117.89
+GB/s: 12.7709
+
+Starting run 8 [131072,  147456]
+Number of instructions: 16384
+Number of pages: 16384
+Start execution
+time used: 5.25449e+06ns
+read page count: 16245/16245
+write resp count: 16384/16384
+all page passed?: True
+kIOPS: 3118.1
+GB/s: 12.7717
+
+Starting run 9 [147456,  163840]
+Number of instructions: 16384
+Number of pages: 16384
+Start execution
+time used: 4.9099e+06ns
+read page count: 13013/13013
+write resp count: 16384/16384
+all page passed?: True
+kIOPS: 3336.93
+GB/s: 13.6681
+
+Starting run 10 [163840,  180224]
+Number of instructions: 16384
+Number of pages: 16384
+Start execution
+time used: 5.10318e+06ns
+read page count: 14994/14994
+write resp count: 16384/16384
+all page passed?: True
+kIOPS: 3210.55
+GB/s: 13.1504
+
+Starting run 11 [180224,  196608]
+Number of instructions: 16384
+Number of pages: 16384
+Start execution
+time used: 5.45739e+06ns
+read page count: 15782/15782
+write resp count: 16384/16384
+all page passed?: True
+kIOPS: 3002.17
+GB/s: 12.2969
+
+Starting run 12 [196608,  212992]
+Number of instructions: 16384
+Number of pages: 16384
+Start execution
+time used: 5.19458e+06ns
+read page count: 16075/16075
+write resp count: 16384/16384
+all page passed?: True
+kIOPS: 3154.05
+GB/s: 12.919
+
+Starting run 13 [212992,  229376]
+Number of instructions: 16384
+Number of pages: 16384
+Start execution
+time used: 5.81816e+06ns
+read page count: 16623/16623
+write resp count: 16384/16384
+all page passed?: True
+kIOPS: 2816.01
+GB/s: 11.5344
+
+Starting run 14 [229376,  245760]
+Number of instructions: 16384
+Number of pages: 16384
+Start execution
+time used: 6.04654e+06ns
+read page count: 16633/16633
+write resp count: 16384/16384
+all page passed?: True
+kIOPS: 2709.65
+GB/s: 11.0987
+
+Starting run 15 [245760,  262144]
+Number of instructions: 16384
+Number of pages: 16384
+Start execution
+time used: 6.24959e+06ns
+read page count: 16539/16539
+write resp count: 16384/16384
+all page passed?: True
+kIOPS: 2621.61
+GB/s: 10.7381
+
+Starting run 16 [262144,  278528]
+Number of instructions: 16384
+Number of pages: 16384
+Start execution
+time used: 1.11918e+07ns
+read page count: 16604/16604
+write resp count: 16384/16384
+all page passed?: True
+kIOPS: 1463.93
+GB/s: 5.99627
+
+Starting run 17 [278528,  294912]
+Number of instructions: 16384
+Number of pages: 16384
+Start execution
+time used: 1.03557e+07ns
+read page count: 16567/16567
+write resp count: 16384/16384
+all page passed?: True
+kIOPS: 1582.12
+GB/s: 6.48038
+
+Starting run 18 [294912,  311296]
+Number of instructions: 16384
+Number of pages: 16384
+Start execution
+time used: 6.6908e+06ns
+read page count: 15546/15546
+write resp count: 16384/16384
+all page passed?: True
+kIOPS: 2448.73
+GB/s: 10.03
+
+Starting run 19 [311296,  327680]
+Number of instructions: 16384
+Number of pages: 16384
+Start execution
+time used: 7.28323e+06ns
+read page count: 15711/15711
+write resp count: 16384/16384
+all page passed?: True
+kIOPS: 2249.55
+GB/s: 9.21416
+
+Starting run 20 [327680,  344064]
+Number of instructions: 16384
+Number of pages: 16384
+Start execution
+time used: 1.30374e+07ns
+read page count: 16167/16167
+write resp count: 16384/16384
+all page passed?: True
+kIOPS: 1256.69
+GB/s: 5.14742
+
+Starting run 21 [344064,  360448]
+Number of instructions: 16384
+Number of pages: 16384
+Start execution
+time used: 1.36923e+07ns
+read page count: 16632/16632
+write resp count: 16384/16384
+all page passed?: True
+kIOPS: 1196.59
+GB/s: 4.90123
+Padding instructions with 13 reads of page 0
+
+Starting run 22 [360448,  366835]
+Number of instructions: 6387
+Number of pages: 6400
+Start execution
+time used: 7.59732e+06ns
+read page count: 6485/6485
+write resp count: 6400/6400
+all page passed?: True
+kIOPS: 842.402
+GB/s: 3.45048
+
+benchmarking done, avg time used: 7.15297e+06 ns
+total time used for 366835 instructions: 1.64518e+08 ns
+kIOPS: 2229.83
+GB/s: 9.13338

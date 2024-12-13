@@ -171,6 +171,7 @@ bool modPages(Context &ctx, vector<Instr>::iterator instrs_begin, vector<Instr>:
 
 bool modPages(Context &ctx, OpCode opcode, uint32_t instr_count, uint32_t lba_offset, vector<uint32_t>::iterator pg_idx_lst_begin, vector<uint32_t>::iterator pg_idx_lst_end, stringstream &outfile_name, double &time, bool init_sha3 = false, bool validate = true) {
   auto pg_idx_lst_size = distance(pg_idx_lst_begin, pg_idx_lst_end);
+  assert(pg_idx_lst_size % 16 == 0);
   assert(instr_count > 0);
   assert(pg_idx_lst_size % instr_count == 0);
   uint32_t instr_pg_count = pg_idx_lst_size / instr_count;
